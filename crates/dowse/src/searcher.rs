@@ -1208,7 +1208,7 @@ mod tests {
             );
         }
 
-        let hits = searcher.search("کتاب", 10)?;
+        let hits = searcher.search("\"کتاب\"", 10)?;
         let hit = hits
             .iter()
             .find(|hit| hit.path.ends_with("کتاب-فارسی.md"))
