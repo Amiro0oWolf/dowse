@@ -125,7 +125,7 @@ fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
         .prefix("dowse-persian-ocr-")
         .tempdir()?;
     let image = target_dir.path().join("persian.png");
-    generate_test_image_with_text(&image, "سلام دنیا کتاب فارسی", "Tahoma", 38, true)?;
+    generate_test_image_with_text(&image, "سلام دنیا کتاب فارسی", "Segoe UI", 48, true)?;
 
     if let Ok(executable) = std::env::var("TESSERACT_CMD") {
         for language in ["fas", "eng+fas"] {
