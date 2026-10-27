@@ -128,7 +128,7 @@ fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
     generate_test_image_with_text(&image, "سلام دنیا کتاب فارسی", "Segoe UI", 48, true)?;
 
     if let Ok(executable) = std::env::var("TESSERACT_CMD") {
-        for language in ["fas", "eng+fas"] {
+        for language in ["fas", "eng+fas", "fas+eng"] {
             for page_segmentation_mode in ["3", "6", "11"] {
                 let output = Command::new(&executable)
                     .arg(&image)

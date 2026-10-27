@@ -195,7 +195,7 @@ mod engine_impl {
             .arg(strip_extended_prefix(path))
             .arg("stdout")
             .arg("-l")
-            .arg("eng+fas")
+            .arg("fas+eng")
             .arg("--tessdata-dir")
             .arg(&engine.tessdata)
             .output()
