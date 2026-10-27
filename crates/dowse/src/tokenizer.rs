@@ -59,7 +59,7 @@ fn normalize_search_char(ch: char) -> Option<String> {
         '۰'..='۹' => char::from_u32('0' as u32 + ch as u32 - '۰' as u32)?,
         _ => ch,
     };
-    Some(normalized.to_lowercase())
+    Some(normalized.to_lowercase().collect())
 }
 
 pub(crate) fn normalize_search_text(text: &str) -> String {
