@@ -190,12 +190,16 @@ mod engine_impl {
         PathBuf::from(crate::display_path(&path.to_string_lossy()))
     }
 
-    pub fn recognize(engine: &Engine, path: &Path) -> anyhow::Result<String> {
+    fn recognize_with_language(
+        engine: &Engine,
+        path: &Path,
+        language: &str,
+    ) -> anyhow::Result<String> {
         let output = tesseract_command(&engine.executable)
             .arg(strip_extended_prefix(path))
             .arg("stdout")
             .arg("-l")
-            .arg("fas+eng")
+            .arg(language)
             .arg("--tessdata-dir")
             .arg(&engine.tessdata)
             .output()
@@ -210,6 +214,19 @@ mod engine_impl {
             );
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    pub fn recognize(engine: &Engine, path: &Path) -> anyhow::Result<String> {
+        let combined = recognize_with_language(engine, path, "eng+fas")?;
+        // The mixed model can read Persian words as Latin; keep the extra pass limited to
+        // images where it detected Arabic script so ordinary English OCR stays one pass.
+        if combined.chars().any(|ch| matches!(ch as u32, 0x0600..=0x06FF)) {
+            let persian = recognize_with_language(engine, path, "fas")?;
+            if !persian.trim().is_empty() {
+                return Ok(format!("{combined}\n{persian}"));
+            }
+        }
+        Ok(combined)
     }
 
     #[cfg(test)]

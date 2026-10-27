@@ -127,29 +127,6 @@ fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
     let image = target_dir.path().join("persian.png");
     generate_test_image_with_text(&image, "سلام دنیا کتاب فارسی", "Segoe UI", 48, true)?;
 
-    if let Ok(executable) = std::env::var("TESSERACT_CMD") {
-        for language in ["fas", "eng+fas", "fas+eng"] {
-            for page_segmentation_mode in ["3", "6", "11"] {
-                let output = Command::new(&executable)
-                    .arg(&image)
-                    .arg("stdout")
-                    .arg("-l")
-                    .arg(language)
-                    .arg("--psm")
-                    .arg(page_segmentation_mode)
-                    .arg("--tessdata-dir")
-                    .arg(Path::new(&executable).parent().unwrap().join("tessdata"))
-                    .output()?;
-                eprintln!(
-                    "Direct Persian OCR ({language}, PSM {page_segmentation_mode}): status={}, stdout={:?}, stderr={:?}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr),
-                );
-            }
-        }
-    }
-
     dowse::rebuild_index(index_dir.path(), target_dir.path())?;
     let stats = dowse::drain_ocr_queue(index_dir.path(), 2)?;
     assert!(stats.available, "bundled Persian OCR must be available");
@@ -168,7 +145,6 @@ fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
         )?
         .map(|chunk| chunk.content)
         .unwrap_or_default();
-    eprintln!("Persian OCR indexed content: {content:?}");
     let hits = searcher.search("کتاب", 10)?;
     assert!(
         hits.iter().any(|hit| hit.path.ends_with("persian.png")),
