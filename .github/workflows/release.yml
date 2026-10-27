@@ -26,6 +26,9 @@ jobs:
       - name: Cache cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Verify bundled English and Persian OCR
+        run: cargo test -p dowse --test ocr_pipeline
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
