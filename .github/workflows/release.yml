@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - amiro0owolf-multi-select-file-operations
     tags:
       - "v*"
   workflow_dispatch:
@@ -67,10 +69,10 @@ jobs:
             "$hash  $($installer.Name)" | Out-File -FilePath $checksums -Append -Encoding ascii
           }
 
-      # 手动触发先产出与正式发布相同的 Windows 安装包，供实机安装/升级冒烟。
-      # 只有 tag 触发才创建 GitHub Release，避免测试包被误当成正式版本。
-      - name: Upload release candidate
-        if: github.event_name == 'workflow_dispatch'
+      # Branch pushes and manual runs produce an installable artifact; only tags
+      # create GitHub Releases.
+      - name: Upload Windows installer artifact
+        if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v7
         with:
           name: dowse-windows-${{ github.sha }}
