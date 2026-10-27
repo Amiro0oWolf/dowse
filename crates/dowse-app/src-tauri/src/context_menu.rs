@@ -20,6 +20,12 @@ struct ContextMenuSelection {
     primary_path: PathBuf,
 }
 
+fn emit_file_operation_failure(app: &AppHandle, error: String) {
+    if let Err(emit_error) = app.emit("dowse://file-operation-failed", error.clone()) {
+        eprintln!("文件操作失败通知界面失败: {emit_error}");
+    }
+}
+
 #[derive(Default)]
 pub struct ContextMenuTarget(Mutex<Option<ContextMenuSelection>>);
 
@@ -153,21 +159,39 @@ pub fn handle_context_menu_event(window: &tauri::Window, event: MenuEvent) {
             }
         }
         ITEM_COPY => {
+            let count = paths.len();
             let result = file_ops_window
                 .clone()
                 .ok_or_else(|| "主窗口不存在".to_string())
                 .and_then(|window| crate::commands::copy_files(window, paths));
-            if let Err(err) = result {
-                eprintln!("右键菜单复制文件失败: {err}");
+            match result {
+                Ok(()) => {
+                    if let Err(err) = app.emit("dowse://files-copied", count) {
+                        eprintln!("右键菜单复制文件后通知界面失败: {err}");
+                    }
+                }
+                Err(err) => {
+                    eprintln!("右键菜单复制文件失败: {err}");
+                    emit_file_operation_failure(&app, err);
+                }
             }
         }
         ITEM_CUT => {
+            let count = paths.len();
             let result = file_ops_window
                 .clone()
                 .ok_or_else(|| "主窗口不存在".to_string())
                 .and_then(|window| crate::commands::cut_files(window, paths));
-            if let Err(err) = result {
-                eprintln!("右键菜单剪切文件失败: {err}");
+            match result {
+                Ok(()) => {
+                    if let Err(err) = app.emit("dowse://files-cut", count) {
+                        eprintln!("右键菜单剪切文件后通知界面失败: {err}");
+                    }
+                }
+                Err(err) => {
+                    eprintln!("右键菜单剪切文件失败: {err}");
+                    emit_file_operation_failure(&app, err);
+                }
             }
         }
         ITEM_DELETE => {
@@ -182,7 +206,10 @@ pub fn handle_context_menu_event(window: &tauri::Window, event: MenuEvent) {
                         eprintln!("右键菜单删除文件后通知界面失败: {err}");
                     }
                 }
-                Err(err) => eprintln!("右键菜单删除文件失败: {err}"),
+                Err(err) => {
+                    eprintln!("右键菜单删除文件失败: {err}");
+                    emit_file_operation_failure(&app, err);
+                }
             }
         }
         ITEM_COPY_PATHS => {

@@ -250,6 +250,7 @@ mod windows_file_ops {
     use std::io;
     use std::mem::size_of;
     use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::ffi::OsStringExt;
     use std::path::Path;
     use std::ptr;
 
@@ -326,6 +327,33 @@ mod windows_file_ops {
         }
     }
 
+    // Shell clipboard and SHFileOperation do not accept canonicalize()'s \\?\ paths.
+    fn shell_path(path: &Path) -> std::ffi::OsString {
+        let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+        let unc_prefix: Vec<u16> = r"\\?\UNC\".encode_utf16().collect();
+        let verbatim_prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
+
+        if wide.len() >= unc_prefix.len()
+            && wide[..unc_prefix.len()]
+                .iter()
+                .zip(&unc_prefix)
+                .all(|(actual, expected)| {
+                    actual == expected
+                        || (*expected >= b'A' as u16
+                            && *expected <= b'Z' as u16
+                            && *actual == *expected + 32)
+                })
+        {
+            let mut normalized = vec![b'\\' as u16, b'\\' as u16];
+            normalized.extend_from_slice(&wide[unc_prefix.len()..]);
+            std::ffi::OsString::from_wide(&normalized)
+        } else if wide.len() >= verbatim_prefix.len() && wide.starts_with(&verbatim_prefix) {
+            std::ffi::OsString::from_wide(&wide[verbatim_prefix.len()..])
+        } else {
+            path.as_os_str().to_os_string()
+        }
+    }
+
     pub fn set_file_clipboard(
         paths: &[impl AsRef<Path>],
         cut: bool,
@@ -342,7 +370,7 @@ mod windows_file_ops {
 
         let mut file_list: Vec<u16> = Vec::new();
         for path in paths {
-            file_list.extend(path.as_ref().as_os_str().encode_wide());
+            file_list.extend(shell_path(path.as_ref()).encode_wide());
             file_list.push(0);
         }
         file_list.push(0);
@@ -419,7 +447,7 @@ mod windows_file_ops {
     ) -> Result<(), String> {
         let mut from = Vec::new();
         for path in paths {
-            from.extend(path.as_ref().as_os_str().encode_wide());
+            from.extend(shell_path(path.as_ref()).encode_wide());
             from.push(0);
         }
         from.push(0);
@@ -442,6 +470,37 @@ mod windows_file_ops {
             return Err("文件删除已取消".to_string());
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::shell_path;
+        use std::ffi::OsString;
+        use std::path::Path;
+
+        #[test]
+        fn shell_path_removes_verbatim_drive_prefix() {
+            assert_eq!(
+                shell_path(Path::new(r"\\?\C:\folder\file.txt")),
+                OsString::from(r"C:\folder\file.txt")
+            );
+        }
+
+        #[test]
+        fn shell_path_converts_verbatim_unc_prefix() {
+            assert_eq!(
+                shell_path(Path::new(r"\\?\UNC\server\share\file.txt")),
+                OsString::from(r"\\server\share\file.txt")
+            );
+        }
+
+        #[test]
+        fn shell_path_preserves_normal_paths() {
+            assert_eq!(
+                shell_path(Path::new(r"C:\folder\file.txt")),
+                OsString::from(r"C:\folder\file.txt")
+            );
+        }
     }
 }
 

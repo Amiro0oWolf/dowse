@@ -185,8 +185,8 @@ const zh: Strings = {
 	dialogAddFolder: '选择要添加的文件夹',
 	toastOpenFailed: (err) => `文件打开失败：${err}`,
 	toastRevealFailed: (err) => `定位文件夹失败：${err}`,
-	toastFilesCopied: (count) => `已复制 ${count} 个文件。`,
-	toastFilesCut: (count) => `已剪切 ${count} 个文件。`,
+	toastFilesCopied: (count) => `已复制 ${count} 个文件到剪贴板，请粘贴到目标位置。`,
+	toastFilesCut: (count) => `已剪切 ${count} 个文件，请粘贴到目标位置以移动文件。`,
 	toastFilesDeleted: (count) => `已将 ${count} 个文件移至回收站。`,
 	toastFileOperationFailed: (err) => `文件操作失败：${err}`,
 	toastRebuildDone: (n) => `索引重建完成，收录 ${n} 个文件。`,
@@ -309,8 +309,10 @@ const en: Strings = {
 	dialogAddFolder: 'Choose a folder to add',
 	toastOpenFailed: (err) => `Could not open file: ${err}`,
 	toastRevealFailed: (err) => `Could not reveal folder: ${err}`,
-	toastFilesCopied: (count) => `Copied ${count} file${count === 1 ? '' : 's'}.`,
-	toastFilesCut: (count) => `Cut ${count} file${count === 1 ? '' : 's'}.`,
+	toastFilesCopied: (count) =>
+		`Copied ${count} file${count === 1 ? '' : 's'} to the clipboard. Paste to a destination.`,
+	toastFilesCut: (count) =>
+		`Cut ${count} file${count === 1 ? '' : 's'}. Paste to a destination to move them.`,
 	toastFilesDeleted: (count) => `Moved ${count} file${count === 1 ? '' : 's'} to the Recycle Bin.`,
 	toastFileOperationFailed: (err) => `File operation failed: ${err}`,
 	toastRebuildDone: (n) => `Index rebuilt. ${n} files indexed.`,

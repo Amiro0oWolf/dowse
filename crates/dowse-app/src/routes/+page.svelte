@@ -1040,6 +1040,16 @@
 		const unlistenFilesDeleted = listen<string[]>('dowse://files-deleted', (evt) => {
 			removeDeletedPaths(evt.payload);
 		});
+		const unlistenFilesCopied = listen<number>('dowse://files-copied', (evt) => {
+			showToast(t.toastFilesCopied(evt.payload));
+		});
+		const unlistenFilesCut = listen<number>('dowse://files-cut', (evt) => {
+			showToast(t.toastFilesCut(evt.payload));
+		});
+		const unlistenFileOperationFailed = listen<string>(
+			'dowse://file-operation-failed',
+			(evt) => showToast(t.toastFileOperationFailed(evt.payload))
+		);
 		const unlistenRebuildDone = listen<number>('dowse://rebuild-done', (evt) => {
 			refreshIndexStatus();
 			// 托盘触发的重建（"重建索引"/"更改索引文件夹…"）没有走本地的
@@ -1085,6 +1095,9 @@
 			unlistenShown.then((f) => f());
 			unlistenOpenSettings.then((f) => f());
 			unlistenFilesDeleted.then((f) => f());
+			unlistenFilesCopied.then((f) => f());
+			unlistenFilesCut.then((f) => f());
+			unlistenFileOperationFailed.then((f) => f());
 			unlistenRebuildDone.then((f) => f());
 			unlistenRebuildError.then((f) => f());
 			unlistenRootRemoved.then((f) => f());
