@@ -89,6 +89,7 @@ mod engine_impl {
         command
     }
 
+    /// Configure the bundled OCR resource directory before starting worker threads.
     pub fn set_resource_dir(path: PathBuf) -> anyhow::Result<()> {
         RESOURCE_DIR
             .set(path)

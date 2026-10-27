@@ -133,11 +133,24 @@ fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
     assert_eq!(stats.processed, 1, "the Persian test image should be OCRed");
 
     let searcher = dowse::Searcher::open(index_dir.path())?;
+    let file_hits = searcher.search("persian", 10)?;
+    let content = searcher
+        .read_indexed_content_chunk(
+            file_hits
+                .first()
+                .map(|hit| hit.path.as_str())
+                .unwrap_or_default(),
+            0,
+            500,
+        )?
+        .map(|chunk| chunk.content)
+        .unwrap_or_default();
+    eprintln!("Persian OCR indexed content: {content:?}");
     let hits = searcher.search("کتاب", 10)?;
     assert!(
         hits.iter().any(|hit| hit.path.ends_with("persian.png")),
-        "Persian OCR text should be searchable; got {:?}",
-        hits.iter().map(|hit| &hit.path).collect::<Vec<_>>()
+        "Persian OCR text should be searchable; extracted content was {content:?}; got {:?}",
+        hits.iter().map(|hit| &hit.path).collect::<Vec<_>>(),
     );
 
     drop(searcher);
