@@ -8,12 +8,21 @@
 # badly enough to break parsing of unrelated code below it.
 param(
     [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Sentinel,
+    [string]$Sentinel,
+    [string]$Text,
     [int]$Width = 900,
     [int]$Height = 220,
     [string]$FontFamily = "Consolas",
-    [int]$FontSize = 26
+    [int]$FontSize = 26,
+    [switch]$RightToLeft
 )
+
+if (-not $Text) {
+    $Text = $Sentinel
+}
+if (-not $Text) {
+    throw "Either Sentinel or Text must be provided."
+}
 
 Add-Type -AssemblyName System.Drawing
 
@@ -24,7 +33,15 @@ $g.Clear([System.Drawing.Color]::White)
 
 $font = New-Object System.Drawing.Font($FontFamily, $FontSize, [System.Drawing.FontStyle]::Regular)
 $brush = [System.Drawing.Brushes]::Black
-$g.DrawString($Sentinel, $font, $brush, 20, 20)
+if ($RightToLeft) {
+    $format = New-Object System.Drawing.StringFormat
+    $format.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
+    $rect = New-Object System.Drawing.RectangleF(20, 20, ($Width - 40), ($Height - 40))
+    $g.DrawString($Text, $font, $brush, $rect, $format)
+    $format.Dispose()
+} else {
+    $g.DrawString($Text, $font, $brush, 20, 20)
+}
 
 $parent = Split-Path -Parent $Path
 if ($parent -and -not (Test-Path $parent)) {

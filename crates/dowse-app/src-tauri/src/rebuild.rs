@@ -19,10 +19,24 @@ use crate::watcher::WatchController;
 /// 通道，最后一条 progress 可能晚于 invoke 返回抵达前端；终态必须再走一次
 /// 与 progress 相同的事件通道，保证它排在本轮全部 progress 之后。
 pub const INDEXING_SETTLED_EVENT: &str = "dowse://indexing-settled";
+const TEXT_PROGRESS_EVENT_INTERVAL: usize = 500;
 
 fn emit_indexing_settled(app: &AppHandle) {
     let snapshot = app.state::<IndexingStatus>().snapshot();
     let _ = app.emit(INDEXING_SETTLED_EVENT, snapshot);
+}
+
+fn report_text_progress(app: &AppHandle, processed: usize, path: String) {
+    app.state::<IndexingStatus>()
+        .set_text_progress(processed, path.clone());
+    if processed % TEXT_PROGRESS_EVENT_INTERVAL != 0 {
+        return;
+    }
+    let _ = app.emit(
+        "dowse://rebuild-progress",
+        IndexProgressDto { processed, path },
+    );
+    crate::tray::refresh_tooltip(app);
 }
 
 /// 防止"重建索引"/"更改索引文件夹"/浮窗按钮三个入口并发触发重建——全量重建
@@ -111,17 +125,7 @@ pub fn perform_rebuild(app: &AppHandle, target: PathBuf) -> Result<IndexStatsDto
     let app_for_progress = app.clone();
     let rebuild_result = dowse::rebuild_index_with_progress(&index_dir, &target, move |progress| {
         let display_path = dowse::display_path(&progress.path.to_string_lossy());
-        app_for_progress
-            .state::<IndexingStatus>()
-            .set_text_progress(progress.processed, display_path.clone());
-        let _ = app_for_progress.emit(
-            "dowse://rebuild-progress",
-            IndexProgressDto {
-                processed: progress.processed,
-                path: display_path,
-            },
-        );
-        crate::tray::refresh_tooltip(&app_for_progress);
+        report_text_progress(&app_for_progress, progress.processed, display_path);
     });
 
     let stats = match rebuild_result {
@@ -234,17 +238,7 @@ pub fn perform_add_root(app: &AppHandle, target: PathBuf) -> Result<IndexStatsDt
         &mut updater,
         move |progress| {
             let display_path = dowse::display_path(&progress.path.to_string_lossy());
-            app_for_progress
-                .state::<IndexingStatus>()
-                .set_text_progress(progress.processed, display_path.clone());
-            let _ = app_for_progress.emit(
-                "dowse://rebuild-progress",
-                IndexProgressDto {
-                    processed: progress.processed,
-                    path: display_path,
-                },
-            );
-            crate::tray::refresh_tooltip(&app_for_progress);
+            report_text_progress(&app_for_progress, progress.processed, display_path);
         },
     );
     // 写入端用完立刻放掉——下面开只读 Searcher/重新挂监听都要求索引目录
@@ -344,17 +338,7 @@ pub fn perform_rebuild_root(app: &AppHandle, root: PathBuf) -> Result<IndexStats
     let rebuild_result =
         dowse::rebuild_root_with_progress(&index_dir, &root, &mut updater, move |progress| {
             let display_path = dowse::display_path(&progress.path.to_string_lossy());
-            app_for_progress
-                .state::<IndexingStatus>()
-                .set_text_progress(progress.processed, display_path.clone());
-            let _ = app_for_progress.emit(
-                "dowse://rebuild-progress",
-                IndexProgressDto {
-                    processed: progress.processed,
-                    path: display_path,
-                },
-            );
-            crate::tray::refresh_tooltip(&app_for_progress);
+            report_text_progress(&app_for_progress, progress.processed, display_path);
         });
     drop(updater);
 

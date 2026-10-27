@@ -128,6 +128,7 @@ pub fn search(
         });
     };
 
+    searcher.reload().map_err(|e| e.to_string())?;
     let group = dowse::ext_group_by_name(ext_group.as_deref());
     let sort_mode = dowse::SortMode::parse(sort.as_deref());
 
@@ -168,6 +169,7 @@ pub fn preview(
     let Some(searcher) = guard.as_ref() else {
         return Ok(None);
     };
+    searcher.reload().map_err(|e| e.to_string())?;
     let Some(hit) = searcher.preview(&path, &query).map_err(|e| e.to_string())? else {
         return Ok(None);
     };
@@ -560,7 +562,7 @@ pub fn delete_files(window: tauri::WebviewWindow, paths: Vec<String>) -> Result<
 /// `RebuildGuard` 防止这个命令和托盘的重建入口并发触发——已经有一次在跑
 /// 就直接报错，不会互相踩踏。
 #[tauri::command]
-pub fn rebuild_index(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto, String> {
+pub async fn rebuild_index(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto, String> {
     if !app.state::<RebuildGuard>().try_begin() {
         return Err("已有一次建索引正在进行中，请稍候".to_string());
     }
@@ -569,7 +571,12 @@ pub fn rebuild_index(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto
         "目录不存在".to_string()
     })?;
 
-    let result = crate::rebuild::perform_rebuild(&app, target);
+    let task_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::rebuild::perform_rebuild(&task_app, target)
+    })
+    .await
+    .unwrap_or_else(|error| Err(format!("索引任务执行失败: {error}")));
     app.state::<RebuildGuard>().end();
     result
 }
@@ -579,13 +586,18 @@ pub fn rebuild_index(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto
 /// 都用 `RebuildGuard` 防并发、都靠 `dowse://rebuild-progress` 事件直播进度，
 /// 唯一区别是这个不动现有索引内容，只对新根做一次目录树 upsert。
 #[tauri::command]
-pub fn add_root(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto, String> {
+pub async fn add_root(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto, String> {
     if !app.state::<RebuildGuard>().try_begin() {
         return Err("已有一次建索引正在进行中，请稍候".to_string());
     }
     let target = PathBuf::from(&dir);
 
-    let result = crate::rebuild::perform_add_root(&app, target);
+    let task_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::rebuild::perform_add_root(&task_app, target)
+    })
+    .await
+    .unwrap_or_else(|error| Err(format!("索引任务执行失败: {error}")));
     app.state::<RebuildGuard>().end();
     result
 }

@@ -65,18 +65,37 @@ const SENTINEL_SHOT0: &str = "dowsemagictokenquokka";
 const SENTINEL_SHOT1: &str = "dowsemagictokenwombat";
 
 fn generate_test_image(path: &Path, sentinel: &str) -> Result<()> {
+    generate_test_image_with_text(path, sentinel, "Consolas", 26, false)
+}
+
+fn generate_test_image_with_text(
+    path: &Path,
+    text: &str,
+    font_family: &str,
+    font_size: u32,
+    right_to_left: bool,
+) -> Result<()> {
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
         .join("make_ocr_test_image.ps1");
 
-    let status = Command::new("powershell")
+    let mut command = Command::new("powershell");
+    command
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(&script)
         .arg("-Path")
         .arg(path)
-        .arg("-Sentinel")
-        .arg(sentinel)
+        .arg("-Text")
+        .arg(text)
+        .arg("-FontFamily")
+        .arg(font_family)
+        .arg("-FontSize")
+        .arg(font_size.to_string());
+    if right_to_left {
+        command.arg("-RightToLeft");
+    }
+    let status = command
         .status()
         .context("拉起 powershell 生成测试图片失败")?;
 
@@ -86,6 +105,44 @@ fn generate_test_image(path: &Path, sentinel: &str) -> Result<()> {
         "测试图片生成后文件不存在: {}",
         path.display()
     );
+    Ok(())
+}
+
+#[test]
+fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
+    common::force_slow_lane_for_tests();
+
+    if !dowse::is_available() {
+        eprintln!(
+            "跳过 persian_image_text_is_searchable_with_bundled_fas_model：\
+             本机没有检测到 Tesseract 引擎和英语/波斯语模型"
+        );
+        return Ok(());
+    }
+
+    let index_dir = tempfile::tempdir()?;
+    let target_dir = tempfile::Builder::new()
+        .prefix("dowse-persian-ocr-")
+        .tempdir()?;
+    let image = target_dir.path().join("persian.png");
+    generate_test_image_with_text(&image, "سلام دنیا کتاب فارسی", "Tahoma", 38, true)?;
+
+    dowse::rebuild_index(index_dir.path(), target_dir.path())?;
+    let stats = dowse::drain_ocr_queue(index_dir.path(), 2)?;
+    assert!(stats.available, "bundled Persian OCR must be available");
+    assert_eq!(stats.processed, 1, "the Persian test image should be OCRed");
+
+    let searcher = dowse::Searcher::open(index_dir.path())?;
+    let hits = searcher.search("کتاب", 10)?;
+    assert!(
+        hits.iter().any(|hit| hit.path.ends_with("persian.png")),
+        "Persian OCR text should be searchable; got {:?}",
+        hits.iter().map(|hit| &hit.path).collect::<Vec<_>>()
+    );
+
+    drop(searcher);
+    common::close_tempdir_retrying(index_dir);
+    common::close_tempdir_retrying(target_dir);
     Ok(())
 }
 

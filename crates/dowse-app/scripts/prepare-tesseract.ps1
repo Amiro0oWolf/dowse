@@ -40,6 +40,17 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/tesseract-ocr/tessdata
 
 & $sourceExe --version
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$languages = & $sourceExe --list-langs --tessdata-dir $dataDir
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Tesseract could not load its bundled language models."
+  exit $LASTEXITCODE
+}
+foreach ($language in @("eng", "fas")) {
+  if ($languages -notcontains $language) {
+    Write-Error "Tesseract did not load the required language model: $language"
+    exit 1
+  }
+}
 foreach ($language in @("eng", "fas")) {
   if (!(Test-Path (Join-Path $dataDir "${language}.traineddata"))) {
     Write-Error "Missing required Tesseract model: $language"

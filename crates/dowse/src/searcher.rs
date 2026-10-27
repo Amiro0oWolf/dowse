@@ -1078,7 +1078,41 @@ fn snippet_with_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{IndexUpdater, PendingChange, PendingOp};
     use tantivy::doc;
+
+    #[test]
+    fn reload_picks_up_documents_committed_by_the_writer() -> Result<()> {
+        let index_dir = tempfile::tempdir()?;
+        let target_dir = tempfile::Builder::new().prefix("dowse-reload-").tempdir()?;
+        std::fs::write(target_dir.path().join("initial.md"), "initialtoken")?;
+        crate::rebuild_index(index_dir.path(), target_dir.path())?;
+
+        let searcher = Searcher::open(index_dir.path())?;
+        assert!(searcher.search("newtoken", 10)?.is_empty());
+
+        let added_path = target_dir.path().join("added.md");
+        std::fs::write(&added_path, "newtoken")?;
+        let mut updater = IndexUpdater::open(index_dir.path())?;
+        updater.apply(&[PendingChange {
+            path: added_path.clone(),
+            op: PendingOp::Upsert,
+        }])?;
+        drop(updater);
+
+        assert!(searcher.search("newtoken", 10)?.is_empty());
+        searcher.reload()?;
+        assert!(
+            searcher
+                .search("newtoken", 10)?
+                .iter()
+                .any(|hit| hit.path.ends_with("added.md"))
+        );
+
+        drop(searcher);
+        crate::remove_dir_all_retrying(index_dir.path())?;
+        Ok(())
+    }
 
     #[test]
     fn plain_typeahead_plan_is_deterministic_across_scripts() {

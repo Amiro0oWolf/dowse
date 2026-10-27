@@ -236,6 +236,7 @@
 	// 的日志文案，避免两处各写一份 30 而将来改漏一处。
 	const SEARCH_DEBOUNCE_MS = 30;
 	let searchToken = 0;
+	let searchRevision = $state(0);
 	let previousSearchCriteria = '';
 	let pendingPageSelection: 'first' | 'last' = 'first';
 	$effect(() => {
@@ -243,6 +244,7 @@
 		const group = extGroup;
 		const sort = sortOption;
 		const requestedPage = pageIndex;
+		const requestedRevision = searchRevision;
 		const token = ++searchToken;
 		const criteria = `${q}\u0000${group}\u0000${sort}\u0000${pageSize}`;
 		if (criteria !== previousSearchCriteria) {
@@ -281,7 +283,7 @@
 					group,
 					sort
 				);
-				if (token !== searchToken) return;
+				if (token !== searchToken || requestedRevision !== searchRevision) return;
 				const resolvedPages = pageCount(results.total, pageSize);
 				const resolvedPage = clampPageIndex(requestedPage, resolvedPages);
 				if (resolvedPage !== requestedPage) {
@@ -297,7 +299,7 @@
 				lastSearchMs = performance.now() - startedAt;
 				reportSearchPerf(keystrokeAt, startedAt, token);
 			} catch (err) {
-				if (token !== searchToken) return;
+				if (token !== searchToken || requestedRevision !== searchRevision) return;
 				hits = [];
 				totalHits = 0;
 				lastSearchMs = null;
@@ -1138,13 +1140,17 @@
 		// 避免完成报告永久遮住后台已经拿到的搜索结果（Issue #28）。
 		const unlistenIndexingSettled = listen<IndexingSnapshot>(
 			'dowse://indexing-settled',
-			(evt) => applyIndexingEvent({ type: 'snapshot', snapshot: evt.payload })
+			(evt) => {
+				applyIndexingEvent({ type: 'snapshot', snapshot: evt.payload });
+				searchRevision++;
+			}
 		);
 		// OCR 队列消化进度：payload 是这一刻队列里还剩多少张待处理——
 		// 症状 3 的修复核心，v0.6.1 之前这行字是重建完成那一刻的静态快照，
 		// 从不刷新；现在跟着 OCR worker 每个 flush 批次持续推送、持续下降。
 		const unlistenOcrProgress = listen<number>('dowse://ocr-progress', (evt) => {
 			applyOcrPending(evt.payload);
+			searchRevision++;
 		});
 
 		return () => {

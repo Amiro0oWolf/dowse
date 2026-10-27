@@ -75,6 +75,20 @@ mod engine_impl {
 
     static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+    fn tesseract_command(executable: &Path) -> Command {
+        let mut command = Command::new(executable);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            use windows::Win32::System::Threading::{
+                BELOW_NORMAL_PRIORITY_CLASS, CREATE_NO_WINDOW,
+            };
+
+            command.creation_flags((BELOW_NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW).0);
+        }
+        command
+    }
+
     pub fn set_resource_dir(path: PathBuf) -> anyhow::Result<()> {
         RESOURCE_DIR
             .set(path)
@@ -82,12 +96,23 @@ mod engine_impl {
     }
 
     pub fn is_available() -> bool {
-        find_installation().is_some_and(|(executable, _)| {
-            Command::new(executable)
-                .arg("--version")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
+        let Some((executable, tessdata)) = find_installation() else {
+            return false;
+        };
+        let Ok(output) = tesseract_command(&executable)
+            .arg("--list-langs")
+            .arg("--tessdata-dir")
+            .arg(tessdata)
+            .output()
+        else {
+            return false;
+        };
+        output.status.success() && {
+            let languages = String::from_utf8_lossy(&output.stdout);
+            ["eng", "fas"]
+                .iter()
+                .all(|required| languages.lines().any(|line| line.trim() == *required))
+        }
     }
 
     fn find_installation() -> Option<(PathBuf, PathBuf)> {
@@ -165,7 +190,7 @@ mod engine_impl {
     }
 
     pub fn recognize(engine: &Engine, path: &Path) -> anyhow::Result<String> {
-        let output = Command::new(&engine.executable)
+        let output = tesseract_command(&engine.executable)
             .arg(strip_extended_prefix(path))
             .arg("stdout")
             .arg("-l")
