@@ -137,7 +137,7 @@ pub fn run() {
             commands::minimize_window,
             commands::toggle_maximize,
             commands::exit_app,
-            commands::persian_ocr_available,
+            commands::ocr_available,
             commands::hide_window,
             commands::report_shown_perf,
             commands::report_search_perf,
@@ -157,6 +157,20 @@ pub fn run() {
             let window = app
                 .get_webview_window("main")
                 .expect("tauri.conf.json 里定义的 main 窗口应该存在");
+
+            #[cfg(windows)]
+            match app.path().resource_dir() {
+                Ok(resource_dir) => {
+                    if let Err(error) = dowse::set_ocr_resource_dir(
+                        resource_dir.join("resources").join("tesseract"),
+                    ) {
+                        logging::log_line("ocr", &format!("配置 Tesseract 资源目录失败: {error}"));
+                    }
+                }
+                Err(error) => {
+                    logging::log_line("ocr", &format!("定位应用资源目录失败: {error}"));
+                }
+            }
 
             // 结果行右键菜单（context_menu::show_result_context_menu）在这个窗口上
             // popup，选中项通过这里回调；托盘菜单是另一套独立的事件注册，见 tray.rs。

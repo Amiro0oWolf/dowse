@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-const OCR_ENGINE_VERSION: u32 = 2;
+const OCR_ENGINE_VERSION: u32 = 3;
 
 /// 一条待处理记录：入队时的 (mtime, size)。worker 处理完之后拿当时的三元组去核对——
 /// 如果文件在排队期间又变了，仍然按最新状态重新识别（见 OcrQueue::enqueue 的覆盖语义）。
@@ -38,9 +38,14 @@ struct Processed {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 struct QueueState {
+    #[serde(default = "unknown_ocr_engine_version")]
     ocr_engine_version: u32,
     pending: HashMap<String, Stat>,
     processed: HashMap<String, Processed>,
+}
+
+fn unknown_ocr_engine_version() -> u32 {
+    0
 }
 
 impl Default for QueueState {
@@ -286,6 +291,23 @@ mod tests {
         let refreshed = load_state(&index_dir);
         assert!(refreshed.processed.is_empty());
         assert_eq!(refreshed.pending.len(), 1);
+        assert_eq!(refreshed.ocr_engine_version, OCR_ENGINE_VERSION);
+    }
+
+    #[test]
+    fn load_state_invalidates_processed_content_without_an_engine_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        let path = queue_path(&index_dir);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            path,
+            r#"{"pending":{},"processed":{"C:\\shots\\old.png":{"mtime":3,"size":4,"content":"old OCR text"}}}"#,
+        )
+        .unwrap();
+
+        let refreshed = load_state(&index_dir);
+        assert!(refreshed.processed.is_empty());
         assert_eq!(refreshed.ocr_engine_version, OCR_ENGINE_VERSION);
     }
 

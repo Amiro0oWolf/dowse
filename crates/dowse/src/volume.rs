@@ -135,7 +135,7 @@ fn log_capability(root: &Path, capability: &RootCapability) {
 }
 
 /// 供集成测试用的权限护栏：这个路径能不能走 NTFS 快速路径（MFT 枚举 +
-/// USN Journal）。跟 `dowse::is_available()`（OCR 语言包探测）是同一个
+/// USN Journal）。跟 `dowse::is_available()`（OCR 引擎探测）是同一个
 /// 用途——测试开头先探测一次，探测不到就打印原因跳过，不需要管理员权限的
 /// 测试永远能跑，需要的测试在非管理员机器/CI 上不会把构建搞红。
 pub fn ntfs_fast_path_available(root: &Path) -> bool {

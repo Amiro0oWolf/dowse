@@ -16,11 +16,14 @@ test('pagination stays hidden for a single result page', () => {
 test('pagination includes a partial final page', () => {
 	assert.equal(pageCount(SEARCH_PAGE_SIZE + 1), 2);
 	assert.equal(pageCount(327), 7);
+	assert.equal(pageCount(327, 100), 4);
+	assert.equal(pageCount(500, 500), 1);
 });
 
 test('page offsets advance by the fixed search page size', () => {
 	assert.equal(pageOffset(0), 0);
 	assert.equal(pageOffset(3), 150);
+	assert.equal(pageOffset(3, 500), 1500);
 });
 
 test('page indices are clamped after the result set shrinks', () => {

@@ -63,13 +63,12 @@ fn normalize_search_char(ch: char) -> Option<String> {
 }
 
 pub(crate) fn normalize_search_text(text: &str) -> String {
-    text.chars().filter_map(normalize_search_char).fold(
-        String::new(),
-        |mut normalized, ch| {
+    text.chars()
+        .filter_map(normalize_search_char)
+        .fold(String::new(), |mut normalized, ch| {
             normalized.push_str(&ch);
             normalized
-        },
-    )
+        })
 }
 
 /// 混合分词器：汉字段走 jieba，非汉字段按字母数字切，全部小写归一。
@@ -499,7 +498,10 @@ mod tests {
             tokens.push(stream.token().clone());
         }
         assert_eq!(
-            tokens.iter().map(|token| token.text.as_str()).collect::<Vec<_>>(),
+            tokens
+                .iter()
+                .map(|token| token.text.as_str())
+                .collect::<Vec<_>>(),
             vec!["ک", "کت", "کتا", "کتاب"]
         );
         assert_eq!(

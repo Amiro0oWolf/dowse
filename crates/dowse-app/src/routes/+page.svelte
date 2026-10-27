@@ -22,6 +22,7 @@
 	import GhostDropdown from '$lib/components/GhostDropdown.svelte';
 	import PinButton from '$lib/components/PinButton.svelte';
 	import WindowControls from '$lib/components/WindowControls.svelte';
+	import ThemeButton from '$lib/components/ThemeButton.svelte';
 	import SettingsButton from '$lib/components/SettingsButton.svelte';
 	import AnimatedNumber from '$lib/components/AnimatedNumber.svelte';
 	import ShortcutOverlay from '$lib/components/ShortcutOverlay.svelte';
@@ -29,6 +30,7 @@
 	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
 	import { formatHotkey } from '$lib/hotkey';
 	import { t } from '$lib/i18n';
+	import { applyTheme, loadTheme, type Theme } from '$lib/theme';
 	import { loadHistory, recordHistory, removeHistoryEntry, clearHistory } from '$lib/searchHistory';
 	import { reduceIndexingView } from '$lib/indexingState';
 	import {
@@ -60,6 +62,12 @@
 		{ value: 'mtime_asc', label: t.sortOldest },
 		{ value: 'size_desc', label: t.sortLargest }
 	];
+	const PAGE_SIZE_OPTIONS = [50, 100, 200, 500] as const;
+	const PAGE_SIZE_MENU_OPTIONS = PAGE_SIZE_OPTIONS.map((size) => ({
+		value: String(size),
+		label: String(size)
+	}));
+	type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
 	let query = $state('');
 	let hits = $state<SearchHit[]>([]);
@@ -129,6 +137,10 @@
 	let sortMenuOpen = $state(false);
 	let typeMenuIndex = $state(0);
 	let sortMenuIndex = $state(0);
+	let pageSizeMenuOpen = $state(false);
+	let pageSizeMenuIndex = $state(0);
+	let pageSize = $state<PageSize>(SEARCH_PAGE_SIZE);
+	let theme = $state<Theme>('light');
 	let pinned = $state(false);
 	let shortcutOverlayOpen = $state(false);
 	let hotkeyLabel = $state('Alt+`');
@@ -159,7 +171,7 @@
 	const SPLIT_RATIO_KEY = 'dowse:results-preview-split';
 
 	let selectedHit = $derived(hits[selectedIndex] ?? null);
-	let totalPages = $derived(pageCount(totalHits));
+	let totalPages = $derived(pageCount(totalHits, pageSize));
 
 	// 文本阶段（'text'）无论触发源（浮窗按钮/托盘"重建索引"/托盘"更改索引
 	// 文件夹…"）都要接管成全屏引导层——`indexingPhase` 是跨触发源统一的
@@ -219,7 +231,7 @@
 	}
 
 	// 键入 30ms 防抖即搜——查询词变了就重新发起，过期响应用 token 挡掉。
-	// 类型筛选 / 排序器的选择跟查询词一起参与防抖：选中即重搜，不需要额外
+	// 类型筛选、排序和每页条数的选择跟查询词一起参与防抖：选中即重搜，不需要额外
 	// 的"应用"按钮。这个常量同时喂给下面的 setTimeout 和 reportSearchPerf
 	// 的日志文案，避免两处各写一份 30 而将来改漏一处。
 	const SEARCH_DEBOUNCE_MS = 30;
@@ -232,7 +244,7 @@
 		const sort = sortOption;
 		const requestedPage = pageIndex;
 		const token = ++searchToken;
-		const criteria = `${q}\u0000${group}\u0000${sort}`;
+		const criteria = `${q}\u0000${group}\u0000${sort}\u0000${pageSize}`;
 		if (criteria !== previousSearchCriteria) {
 			previousSearchCriteria = criteria;
 			pendingPageSelection = 'first';
@@ -264,13 +276,13 @@
 			try {
 				const results = await api.search(
 					q,
-					SEARCH_PAGE_SIZE,
-					pageOffset(requestedPage),
+					pageSize,
+					pageOffset(requestedPage, pageSize),
 					group,
 					sort
 				);
 				if (token !== searchToken) return;
-				const resolvedPages = pageCount(results.total);
+				const resolvedPages = pageCount(results.total, pageSize);
 				const resolvedPage = clampPageIndex(requestedPage, resolvedPages);
 				if (resolvedPage !== requestedPage) {
 					pageIndex = resolvedPage;
@@ -710,10 +722,12 @@
 	function closeMenus() {
 		typeMenuOpen = false;
 		sortMenuOpen = false;
+		pageSizeMenuOpen = false;
 	}
 
 	function openTypeMenu() {
 		sortMenuOpen = false;
+		pageSizeMenuOpen = false;
 		typeMenuOpen = !typeMenuOpen;
 		typeMenuIndex = Math.max(
 			0,
@@ -723,11 +737,36 @@
 
 	function openSortMenu() {
 		typeMenuOpen = false;
+		pageSizeMenuOpen = false;
 		sortMenuOpen = !sortMenuOpen;
 		sortMenuIndex = Math.max(
 			0,
 			SORT_OPTIONS.findIndex((o) => o.value === sortOption)
 		);
+	}
+
+	function openPageSizeMenu() {
+		typeMenuOpen = false;
+		sortMenuOpen = false;
+		pageSizeMenuOpen = !pageSizeMenuOpen;
+		pageSizeMenuIndex = PAGE_SIZE_OPTIONS.indexOf(pageSize);
+	}
+
+	function setPageSize(value: string) {
+		const next = PAGE_SIZE_OPTIONS.find((size) => String(size) === value);
+		if (!next) return;
+		pageSize = next;
+		try {
+			localStorage.setItem('dowse:search-page-size', String(pageSize));
+		} catch {
+			// Keep the selected value for this session if storage is unavailable.
+		}
+		closeMenus();
+	}
+
+	function toggleTheme() {
+		theme = theme === 'dark' ? 'light' : 'dark';
+		applyTheme(theme);
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -778,9 +817,17 @@
 		}
 		// 菜单打开时，↑↓/Enter/Esc 转去控制菜单本身，不透传给下面的结果列表
 		// 导航——避免同一次按键既翻结果又翻菜单项。
-		if (typeMenuOpen || sortMenuOpen) {
-			const options = typeMenuOpen ? TYPE_OPTIONS : SORT_OPTIONS;
-			let index = typeMenuOpen ? typeMenuIndex : sortMenuIndex;
+		if (typeMenuOpen || sortMenuOpen || pageSizeMenuOpen) {
+			const options = typeMenuOpen
+				? TYPE_OPTIONS
+				: sortMenuOpen
+					? SORT_OPTIONS
+					: PAGE_SIZE_MENU_OPTIONS;
+			let index = typeMenuOpen
+				? typeMenuIndex
+				: sortMenuOpen
+					? sortMenuIndex
+					: pageSizeMenuIndex;
 			if (e.key === 'ArrowDown') {
 				e.preventDefault();
 				index = Math.min(index + 1, options.length - 1);
@@ -791,7 +838,8 @@
 				e.preventDefault();
 				const picked = options[index].value;
 				if (typeMenuOpen) extGroup = picked as ExtGroup;
-				else sortOption = picked as SortOption;
+				else if (sortMenuOpen) sortOption = picked as SortOption;
+				else setPageSize(picked);
 				closeMenus();
 				return;
 			} else if (e.key === 'Escape') {
@@ -802,7 +850,8 @@
 				return;
 			}
 			if (typeMenuOpen) typeMenuIndex = index;
-			else sortMenuIndex = index;
+			else if (sortMenuOpen) sortMenuIndex = index;
+			else pageSizeMenuIndex = index;
 			return;
 		}
 
@@ -1004,6 +1053,15 @@
 	}
 
 	onMount(() => {
+		theme = loadTheme();
+		applyTheme(theme);
+		try {
+			const stored = Number(localStorage.getItem('dowse:search-page-size'));
+			const valid = PAGE_SIZE_OPTIONS.find((size) => size === stored);
+			if (valid) pageSize = valid;
+		} catch {
+			// Keep the default page size for this session if storage is unavailable.
+		}
 		try {
 			splitRatio = normalizeSplitRatio(localStorage.getItem(SPLIT_RATIO_KEY));
 		} catch {
@@ -1175,6 +1233,17 @@
 				}}
 				ontoggle={openSortMenu}
 			/>
+			<GhostDropdown
+				idleLabel={t.resultsPerPage}
+				options={PAGE_SIZE_MENU_OPTIONS}
+				value={String(pageSize)}
+				defaultValue=""
+				open={pageSizeMenuOpen}
+				bind:activeIndex={pageSizeMenuIndex}
+				onselect={setPageSize}
+				ontoggle={openPageSizeMenu}
+			/>
+			<ThemeButton {theme} onclick={toggleTheme} />
 			<PinButton {pinned} onclick={togglePinned} />
 			<SettingsButton onclick={openSettingsPanel} />
 			<WindowControls />

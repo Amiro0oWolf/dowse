@@ -4,7 +4,7 @@
 
 [产品官网](https://lter.space/dowse/) · [Windows 搜索文件内容指南](https://lter.space/dowse/windows-file-content-search/) · [GitHub](https://github.com/ltspace/dowse)
 
-> ⚙️ **平台**：主要面向 **Windows**（NTFS/USN 快速索引、OCR 均为 Windows 专属能力）。
+> ⚙️ **平台**：主要面向 **Windows**（NTFS/USN 快速索引为 Windows 专属能力；桌面应用内置英语和波斯语 Tesseract OCR 模型）。
 > 其他平台可编译安装，核心全文检索仍可用，但上述加速/OCR 功能会自动降级停用。
 > **需要 Rust 1.85+**（edition 2024）。
 

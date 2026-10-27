@@ -1,7 +1,5 @@
-//! 图片文件判定（[`is_image`]）、OCR 原始输出的清洗（[`clean_cjk_spaces`]/
-//! [`dual_form_content`]，去掉 Windows OCR 引擎在中文单字之间插入的空格），
-//! 以及 Windows OCR 引擎的薄封装（`engine_impl` 子模块；非 Windows 平台是
-//! 返回"不可用"的桩实现，让 dowse 在其他平台上也能正常编译）。
+//! 图片文件判定（[`is_image`]）、OCR 原始输出清洗（[`clean_cjk_spaces`]/
+//! [`dual_form_content`]），以及 Tesseract 执行和资源发现逻辑。
 
 use std::path::Path;
 
@@ -28,7 +26,7 @@ fn is_cjk(c: char) -> bool {
     matches!(c as u32, 0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0xF900..=0xFAFF)
 }
 
-/// 清洗 OCR 原始输出：Windows OCR 引擎习惯在每个词/字之间插一个空格，包括中文
+/// 清洗 OCR 原始输出：OCR 引擎有时会在每个词/字之间插一个空格，包括中文
 /// 单字之间（实测 `test_zh.png` 识别结果是 "分 布 式 限 流 器 ..."，逐字带空格）。
 /// 只删"两侧都是 CJK 字符"的空格，把它还原成 "分布式限流器"；英文单词间的空格
 /// （"milestone 4 spike"）必须保留，删了英文就连成一坨读不出来、也搜不到了。
@@ -70,115 +68,122 @@ pub(crate) fn dual_form_content(raw: &str) -> String {
     }
 }
 
-#[cfg(windows)]
 mod engine_impl {
     use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::sync::OnceLock;
 
-    use windows::Globalization::Language;
-    use windows::Graphics::Imaging::{BitmapDecoder, SoftwareBitmap};
-    use windows::Media::Ocr::OcrEngine;
-    use windows::Storage::{FileAccessMode, StorageFile};
-    use windows::core::{HSTRING, RuntimeType};
-    use windows_future::IAsyncOperation;
+    static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-    /// 用 pollster 驱动 WinRT 的 IAsyncOperation，不用 spike 里验证过的 busy-poll。
-    /// windows-future 0.3 给 IAsyncOperation<T> 实现了可以直接喂给 pollster::block_on
-    /// 的 Future——已经在独立 spike 里验证过这个调用链能跑通并识别出正确文字。
-    fn block_on<T: RuntimeType + 'static>(
-        op: windows::core::Result<IAsyncOperation<T>>,
-    ) -> windows::core::Result<T> {
-        pollster::block_on(op?)
+    pub fn set_resource_dir(path: PathBuf) -> anyhow::Result<()> {
+        RESOURCE_DIR
+            .set(path)
+            .map_err(|_| anyhow::anyhow!("Tesseract resource directory is already configured"))
     }
 
-    /// 探测系统是否有任何可用的 OCR 语言包。管线启动前调一次；没有就整体停用，
-    /// 不崩溃（见设计文档"降级与错误处理"一节）。
     pub fn is_available() -> bool {
-        OcrEngine::TryCreateFromUserProfileLanguages().is_ok() || create_persian_engine().is_some()
+        find_installation().is_some_and(|(executable, _)| {
+            Command::new(executable)
+                .arg("--version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
     }
 
-    pub fn is_persian_available() -> bool {
-        create_persian_engine().is_some()
+    fn find_installation() -> Option<(PathBuf, PathBuf)> {
+        let mut directories = Vec::new();
+        if let Some(directory) = RESOURCE_DIR.get() {
+            directories.push(directory.clone());
+        }
+        if let Ok(executable) = std::env::current_exe()
+            && let Some(parent) = executable.parent()
+        {
+            directories.push(parent.join("resources").join("tesseract"));
+            directories.push(parent.join("tesseract"));
+        }
+        if let Some(prefix) = std::env::var_os("TESSDATA_PREFIX") {
+            let prefix = PathBuf::from(prefix);
+            if prefix.file_name().is_some_and(|name| name == "tessdata") {
+                if let Some(parent) = prefix.parent() {
+                    directories.push(parent.to_path_buf());
+                }
+            } else {
+                directories.push(prefix);
+            }
+        }
+        if let Some(executable) = std::env::var_os("TESSERACT_CMD") {
+            let executable = PathBuf::from(executable);
+            if let Some(parent) = executable.parent() {
+                directories.push(parent.to_path_buf());
+            }
+        }
+        if let Some(path) = std::env::var_os("PATH") {
+            directories.extend(std::env::split_paths(&path));
+        }
+
+        directories.into_iter().find_map(|directory| {
+            let executable = directory.join("tesseract.exe");
+            let executable = if executable.is_file() {
+                executable
+            } else {
+                let executable = directory.join("tesseract");
+                if !executable.is_file() {
+                    return None;
+                }
+                executable
+            };
+            let tessdata = if directory.file_name().is_some_and(|name| name == "tessdata") {
+                directory.clone()
+            } else {
+                directory.join("tessdata")
+            };
+            (tessdata.join("eng.traineddata").is_file()
+                && tessdata.join("fas.traineddata").is_file())
+            .then_some((executable, tessdata))
+        })
     }
 
-    fn create_persian_engine() -> Option<OcrEngine> {
-        let language = Language::CreateLanguage(&HSTRING::from("fa")).ok()?;
-        OcrEngine::TryCreateFromLanguage(&language).ok()
+    pub struct Engine {
+        executable: PathBuf,
+        tessdata: PathBuf,
     }
 
-    /// 一个不跨线程共享的 OCR 引擎句柄。worker 池每个线程各自创建一份，绝不共享
-    /// 同一个实例——OcrEngine 和 SoftwareBitmap 都不是线程安全的（设计文档第二节）。
-    pub struct Engine(Vec<OcrEngine>);
-
-    /// Persian OCR is tried first when its Windows OCR language pack is installed;
-    /// the user's preferred OCR engine remains the fallback for other languages.
     pub fn create_engine() -> anyhow::Result<Engine> {
-        let mut engines = Vec::with_capacity(2);
-        if let Some(engine) = create_persian_engine() {
-            engines.push(engine);
-        }
-        if let Ok(engine) = OcrEngine::TryCreateFromUserProfileLanguages() {
-            engines.push(engine);
-        }
-        if engines.is_empty() {
-            anyhow::bail!("创建 OCR 引擎失败（可能没有任何 OCR 语言包）");
-        }
-        Ok(Engine(engines))
+        let (executable, tessdata) = find_installation().ok_or_else(|| {
+            anyhow::anyhow!(
+                "bundled Tesseract OCR or required English/Persian traineddata was not found"
+            )
+        })?;
+        Ok(Engine {
+            executable,
+            tessdata,
+        })
     }
 
-    /// `StorageFile::GetFileFromPathAsync` 不认 `\\?\` 扩展长度前缀路径——
-    /// `Path::canonicalize()` 在 Windows 上产出的正是这种前缀路径（dowse 命令行
-    /// 的 `Command::Index` 就这么调），传给它会报"指定的路径过长"，其实不是真的
-    /// 路径太长，是 WinRT 的路径解析根本不接受这种 Win32 扩展前缀语法。真机验证
-    /// 时用 `dowse index` 建索引直接踩中了这个坑（三张图全部识别失败），这里剥掉
-    /// 前缀、退回普通 Win32 路径语法再喂给它。
-    ///
-    /// 剥前缀的规则跟 `lib.rs::display_path` 完全一样（那边是给展示层用），
-    /// 这里直接委托过去，不重复一份同样的字符串处理逻辑。
     fn strip_extended_prefix(path: &Path) -> PathBuf {
         PathBuf::from(crate::display_path(&path.to_string_lossy()))
     }
 
-    fn load_software_bitmap(path: &Path) -> windows::core::Result<SoftwareBitmap> {
-        let normalized = strip_extended_prefix(path);
-        let hpath = HSTRING::from(normalized.as_os_str());
-        let file = block_on(StorageFile::GetFileFromPathAsync(&hpath))?;
-        let stream = block_on(file.OpenAsync(FileAccessMode::Read))?;
-        let decoder = block_on(BitmapDecoder::CreateAsync(&stream))?;
-        block_on(decoder.GetSoftwareBitmapAsync())
-    }
-
-    /// 对一张图片跑 OCR，返回原始识别文本（未清洗，调用方自己过 dual_form_content）。
     pub fn recognize(engine: &Engine, path: &Path) -> anyhow::Result<String> {
-        let bitmap = load_software_bitmap(path)
-            .map_err(|e| anyhow::anyhow!("加载图片失败 {}: {e}", path.display()))?;
-        let mut fallback = None;
-        let mut last_error = None;
-        for recognizer in &engine.0 {
-            match block_on(recognizer.RecognizeAsync(&bitmap)).and_then(|result| result.Text()) {
-                Ok(text) => {
-                    let text = text.to_string();
-                    if text.chars().any(is_arabic_script) {
-                        return Ok(text);
-                    }
-                    fallback.get_or_insert(text);
-                }
-                Err(error) => last_error = Some(error),
-            }
+        let output = Command::new(&engine.executable)
+            .arg(strip_extended_prefix(path))
+            .arg("stdout")
+            .arg("-l")
+            .arg("eng+fas")
+            .arg("--tessdata-dir")
+            .arg(&engine.tessdata)
+            .output()
+            .map_err(|error| {
+                anyhow::anyhow!("start bundled Tesseract for {}: {error}", path.display())
+            })?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "Tesseract failed for {}: {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
         }
-        if let Some(text) = fallback {
-            return Ok(text);
-        }
-        Err(anyhow::anyhow!(
-            "OCR 识别失败 {}: {}",
-            path.display(),
-            last_error
-                .map(|error| error.to_string())
-                .unwrap_or_else(|| "没有可用的 OCR 引擎".to_string())
-        ))
-    }
-
-    fn is_arabic_script(character: char) -> bool {
-        matches!(character as u32, 0x0600..=0x06FF | 0x0750..=0x077F | 0x08A0..=0x08FF)
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
 
     #[cfg(test)]
@@ -211,44 +216,12 @@ mod engine_impl {
     }
 }
 
-#[cfg(not(windows))]
-mod engine_impl {
-    use std::path::Path;
-
-    /// 非 Windows 平台的桩实现：OCR 管线整个不可用。dowse 是 Windows 专用工具，
-    /// 这里存在只是让 dowse 在非 Windows 平台上也能 `cargo check` 过，
-    /// 不需要在每个调用点散布额外的 cfg 分支。
-    pub fn is_available() -> bool {
-        false
-    }
-
-    pub fn is_persian_available() -> bool {
-        false
-    }
-
-    pub struct Engine;
-
-    pub fn create_engine() -> anyhow::Result<Engine> {
-        anyhow::bail!("OCR 仅支持 Windows")
-    }
-
-    pub fn recognize(_engine: &Engine, _path: &Path) -> anyhow::Result<String> {
-        anyhow::bail!("OCR 仅支持 Windows")
-    }
-}
-
-/// 探测系统是否有可用的 OCR 语言包。管线整体启用与否的开关，UI 侧也可以拿它
-/// 提前决定要不要显示"OCR 不可用"的引导文案。
+/// 检查 Tesseract 与内置英语、波斯语模型是否可用。
 pub fn is_available() -> bool {
     engine_impl::is_available()
 }
 
-/// Whether Windows has the Persian OCR language pack required to recognize Persian
-/// text in images. The standard OCR engine remains available without it.
-pub fn is_persian_available() -> bool {
-    engine_impl::is_persian_available()
-}
-
+pub use engine_impl::set_resource_dir;
 pub(crate) use engine_impl::{create_engine, recognize};
 
 #[cfg(test)]

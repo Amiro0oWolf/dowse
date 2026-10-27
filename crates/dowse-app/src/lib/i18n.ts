@@ -80,9 +80,12 @@ interface Strings {
 	windowMaximize: string;
 	windowRestore: string;
 	windowExit: string;
-	persianOcrTitle: string;
-	persianOcrAvailable: string;
-	persianOcrMissing: string;
+	ocrTitle: string;
+	ocrAvailable: string;
+	ocrMissing: string;
+	themeDark: string;
+	themeLight: string;
+	resultsPerPage: string;
 	// 底部快捷键条
 	scHide: string;
 	scCopyFiles: string;
@@ -223,10 +226,12 @@ const zh: Strings = {
 	windowMaximize: '最大化',
 	windowRestore: '还原',
 	windowExit: '退出',
-	persianOcrTitle: '波斯语图片 OCR',
-	persianOcrAvailable: '已检测到波斯语 OCR 语言包。',
-	persianOcrMissing:
-		'未检测到 Windows 波斯语 OCR 语言包。请在“设置 > 时间和语言 > 语言和区域”中安装波斯语 OCR 功能，然后重建索引。',
+	ocrTitle: '图片文字识别',
+	ocrAvailable: '已就绪（内置英语和波斯语 OCR）。',
+	ocrMissing: '内置 OCR 引擎或语言模型缺失；图片文字无法识别。',
+	themeDark: '切换到深色模式',
+	themeLight: '切换到浅色模式',
+	resultsPerPage: '每页结果数',
 	scHide: '隐藏',
 	scCopyFiles: '复制文件',
 	scCutFiles: '剪切文件',
@@ -357,10 +362,12 @@ const en: Strings = {
 	windowMaximize: 'Maximize',
 	windowRestore: 'Restore',
 	windowExit: 'Exit',
-	persianOcrTitle: 'Persian image OCR',
-	persianOcrAvailable: 'Persian OCR language pack detected.',
-	persianOcrMissing:
-		'Windows Persian OCR is not installed. Install the Persian OCR feature under Settings > Time & language > Language & region, then rebuild your index.',
+	ocrTitle: 'Image text recognition',
+	ocrAvailable: 'Ready (English and Persian OCR are bundled).',
+	ocrMissing: 'The bundled OCR engine or language models are missing; image text cannot be recognized.',
+	themeDark: 'Switch to dark mode',
+	themeLight: 'Switch to light mode',
+	resultsPerPage: 'Results per page',
 	scHide: 'Hide',
 	scCopyFiles: 'Copy files',
 	scCutFiles: 'Cut files',

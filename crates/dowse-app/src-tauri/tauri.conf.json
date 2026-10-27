@@ -42,6 +42,7 @@
     "active": true,
     "targets": ["nsis"],
     "externalBin": ["binaries/dowse"],
+    "resources": ["resources/tesseract/**/*"],
     "windows": {
       "nsis": {
         "installerHooks": "./windows/path-hooks.nsh"

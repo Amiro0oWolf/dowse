@@ -48,7 +48,7 @@ pub struct OcrPipeline {
 }
 
 impl OcrPipeline {
-    /// 启动 worker 池。系统没有任何 OCR 语言包时返回 None（打印一行日志，管线
+    /// 启动 worker 池。OCR 引擎或必需的英语/波斯语模型不可用时返回 None（打印一行日志，管线
     /// 整体不启动、不崩溃）——调用方据此可以让托盘/浮窗提示用户，而不是硬报错
     /// （设计文档"降级与错误处理"一节）。
     ///
@@ -64,13 +64,10 @@ impl OcrPipeline {
         on_progress: impl Fn(usize) + Send + Sync + 'static,
     ) -> Option<Self> {
         if !ocr::is_available() {
-            eprintln!("未检测到可用的 OCR 语言包，OCR 管线已停用（截图/图片文字不会被索引）");
-            return None;
-        }
-        if !ocr::is_persian_available() {
             eprintln!(
-                "未检测到波斯语 OCR 语言包；如需识别图片中的波斯语，请在 Windows“设置 > 时间和语言 > 语言和区域”中安装波斯语 OCR 功能"
+                "未检测到打包的 Tesseract OCR 引擎或英语/波斯语模型，OCR 管线已停用（截图/图片文字不会被索引）"
             );
+            return None;
         }
 
         let queue = OcrQueue::for_index_dir(&index_dir);
@@ -232,7 +229,7 @@ fn flush_batch(
 /// `drain_ocr_queue` 一次运行的统计结果。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OcrDrainStats {
-    /// 系统是否有可用的 OCR 语言包；false 时下面的 processed 恒为 0，不算错误。
+    /// 是否有可用的 Tesseract 引擎和模型；false 时 processed 恒为 0。
     pub available: bool,
     /// 本次实际处理掉的图片数。
     pub processed: usize,
@@ -258,7 +255,7 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(60);
 /// if stats.available {
 ///     println!("处理了 {} 张图片", stats.processed);
 /// } else {
-///     println!("系统没有可用的 OCR 语言包，跳过");
+///     println!("Tesseract OCR 引擎或必需模型不可用，跳过");
 /// }
 /// # Ok(())
 /// # }

@@ -33,8 +33,10 @@ impl ContextMenuTarget {
     }
 
     fn set(&self, paths: Vec<PathBuf>, primary_path: PathBuf) {
-        *self.0.lock().expect("context menu target mutex poisoned") =
-            Some(ContextMenuSelection { paths, primary_path });
+        *self.0.lock().expect("context menu target mutex poisoned") = Some(ContextMenuSelection {
+            paths,
+            primary_path,
+        });
     }
 
     fn take(&self) -> Option<ContextMenuSelection> {
@@ -74,8 +76,16 @@ pub fn show_result_context_menu(
     let delete_item = MenuItemBuilder::with_id(ITEM_DELETE, s.ctx_delete)
         .build(&app)
         .map_err(|e| e.to_string())?;
-    let copy_paths_label = if multiple { s.ctx_copy_paths } else { s.ctx_copy_path };
-    let copy_names_label = if multiple { s.ctx_copy_names } else { s.ctx_copy_name };
+    let copy_paths_label = if multiple {
+        s.ctx_copy_paths
+    } else {
+        s.ctx_copy_path
+    };
+    let copy_names_label = if multiple {
+        s.ctx_copy_names
+    } else {
+        s.ctx_copy_name
+    };
     let copy_paths_item = MenuItemBuilder::with_id(ITEM_COPY_PATHS, copy_paths_label)
         .build(&app)
         .map_err(|e| e.to_string())?;
@@ -97,7 +107,10 @@ pub fn show_result_context_menu(
             ],
         )
     } else {
-        Menu::with_items(&app, &[&open_item, &reveal_item, &copy_paths_item, &copy_names_item])
+        Menu::with_items(
+            &app,
+            &[&open_item, &reveal_item, &copy_paths_item, &copy_names_item],
+        )
     }
     .map_err(|e| e.to_string())?;
 

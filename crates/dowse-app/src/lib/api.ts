@@ -84,8 +84,8 @@ export function exitApp(): Promise<void> {
 	return invoke('exit_app');
 }
 
-export function persianOcrAvailable(): Promise<boolean> {
-	return invoke('persian_ocr_available');
+export function ocrAvailable(): Promise<boolean> {
+	return invoke('ocr_available');
 }
 
 /// 结果行右键：在给定选择上弹出 Win32 原生上下文菜单。

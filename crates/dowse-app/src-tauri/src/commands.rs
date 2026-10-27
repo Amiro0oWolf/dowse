@@ -617,8 +617,8 @@ pub fn exit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-pub fn persian_ocr_available() -> bool {
-    dowse::is_persian_available()
+pub fn ocr_available() -> bool {
+    dowse::is_available()
 }
 
 /// 索引规则面板的读取入口：取当前索引目录旁 rules.json 里的规则（没配过就

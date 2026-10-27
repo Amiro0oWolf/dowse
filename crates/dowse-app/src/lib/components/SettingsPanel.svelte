@@ -52,7 +52,7 @@
 	let autostartEnabled = $state(false);
 	let lang = $state<LangOption>('auto');
 	let langChanged = $state(false); // 改过语言 → 显示"重启后生效"
-	let persianOcrAvailable = $state<boolean | null>(null);
+	let ocrAvailable = $state<boolean | null>(null);
 
 	// ── 改键捕获态 ──────────────────────────────────────────────────────────
 	let capturing = $state(false); // 正在等用户按下新组合键
@@ -293,11 +293,11 @@
 			});
 
 		api
-			.persianOcrAvailable()
+			.ocrAvailable()
 			.then((available) => {
-				persianOcrAvailable = available;
+				ocrAvailable = available;
 			})
-			.catch((err) => console.error('persianOcrAvailable failed', err));
+			.catch((err) => console.error('ocrAvailable failed', err));
 
 		// 索引规则初值（原逻辑）。
 		api
@@ -453,14 +453,14 @@
 			</div>
 
 			<div class="field">
-				<span class="field-label">{t.persianOcrTitle}</span>
-				<p class="field-hint" class:restart={persianOcrAvailable === false} role="status">
-					{#if persianOcrAvailable === null}
+				<span class="field-label">{t.ocrTitle}</span>
+				<p class="field-hint" class:restart={ocrAvailable === false} role="status">
+					{#if ocrAvailable === null}
 						—
-					{:else if persianOcrAvailable}
-						{t.persianOcrAvailable}
+					{:else if ocrAvailable}
+						{t.ocrAvailable}
 					{:else}
-						{t.persianOcrMissing}
+						{t.ocrMissing}
 					{/if}
 				</p>
 			</div>

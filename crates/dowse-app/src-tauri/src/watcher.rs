@@ -104,7 +104,10 @@ fn watch_thread(app: AppHandle, index_dir: PathBuf, roots: Vec<PathBuf>, stop: A
         move |pending| report_ocr_progress(&ocr_app, pending),
     );
     if ocr_pipeline.is_none() {
-        crate::logging::log_line("ocr", "未检测到可用的 OCR 语言包，OCR 管线已停用");
+        crate::logging::log_line(
+            "ocr",
+            "未检测到 Tesseract OCR 引擎或英语/波斯语模型，OCR 管线已停用",
+        );
     }
 
     // 挂实时监听，阻塞到 stop 置位。提交后 Searcher 的 reader 自动重载，

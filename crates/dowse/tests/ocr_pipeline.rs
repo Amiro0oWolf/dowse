@@ -1,10 +1,10 @@
 //! OCR 管线端到端集成测试：生成一张带哨兵词的 PNG，走完整的
 //! "全量建索引 → OCR 队列 → 搜索" 链路，断言哨兵词可搜到。
 //!
-//! CI 护栏：GitHub Actions 的 windows-latest 镜像不一定装了中文语言包（甚至可能
-//! 一个 OCR 语言包都没有），所以测试开头先探测 `dowse::is_available()`，
+//! CI 护栏：没有 Tesseract 和英语/波斯语模型时，测试开头先探测
+//! `dowse::is_available()`，
 //! 不可用就跳过并打印原因，不让 CI 变红——这是设计文档要求的降级路径本身
-//! （"系统无任何 OCR 语言包...管线整体停用...不报错不崩溃"）在测试环境里的镜像。
+//! （"OCR 引擎或必需模型缺失...管线整体停用...不报错不崩溃"）在测试环境里的镜像。
 //!
 //! 哨兵词用纯 ASCII 字母数字串而不是中文：中文 OCR 存在已知的系统性拆字误差
 //! （见设计文档"验证结论回放"，池→氵也 一类），用中文哨兵词做精确匹配断言在
@@ -48,7 +48,7 @@ fn wait_until_searchable(index_dir: &Path, query: &str, predicate: impl Fn(usize
 // 套路：jieba 分词器会把这样一整串 ASCII 当成单个 token，搜索时不用担心被切碎。
 //
 // 字母/数字交界处特意避开小写 l 紧跟数字的写法（比如 "sentinel8842" 的
-// l8 交界）——实测 Windows OCR 会把这种交界的 l 认成数字 1
+// l8 交界）——OCR 可能会把这种交界的 l 认成数字 1
 // （"sentinel8842" 被识别成 "sentine18842"），这是 OCR 本身对西文的正常误差，
 // 不是管线的 bug，只是不适合拿来做精确匹配断言，换一个交界处没有歧义字符的词。
 const SENTINEL: &str = "dowsemagictoken7391";
@@ -96,7 +96,7 @@ fn images_with_sentinel_text_become_searchable_after_ocr() -> Result<()> {
     if !dowse::is_available() {
         eprintln!(
             "跳过 images_with_sentinel_text_become_searchable_after_ocr：\
-             本机没有检测到可用的 OCR 语言包（常见于 CI 的 windows-latest 镜像未装语言包）"
+             本机没有检测到 Tesseract 引擎和英语/波斯语模型"
         );
         return Ok(());
     }
@@ -173,7 +173,7 @@ fn ocr_queue_resumes_pending_work_without_reprocessing() -> Result<()> {
     if !dowse::is_available() {
         eprintln!(
             "跳过 ocr_queue_resumes_pending_work_without_reprocessing：\
-             本机没有检测到可用的 OCR 语言包"
+             本机没有检测到 Tesseract 引擎和英语/波斯语模型"
         );
         return Ok(());
     }
@@ -207,7 +207,7 @@ fn ocr_queue_resumes_pending_work_without_reprocessing() -> Result<()> {
 
 /// 断点续传的识别结果落地：队列跑完后，断言两张合成图各自的哨兵词都能搜到。
 ///
-/// 这条断言依赖 Windows OCR 对渲染文字的识别精度——不同机器/语言包版本对个别
+/// 这条断言依赖 Tesseract 对渲染文字的识别精度——不同机器/版本对个别
 /// 字形（如 quokka 里的字母组合）识别有系统性差异，会让这条精确匹配断言偶发
 /// 失败（见文件头注释记录的 0/O、l/1 一类误差）。所以单独标 ignore，避免这类
 /// 环境相关抖动污染 `cargo test`；需要时用 `cargo test -- --ignored` 手动跑。
@@ -219,7 +219,7 @@ fn ocr_restart_recognized_sentinels_are_searchable() -> Result<()> {
     if !dowse::is_available() {
         eprintln!(
             "跳过 ocr_restart_recognized_sentinels_are_searchable：\
-             本机没有检测到可用的 OCR 语言包"
+             本机没有检测到 Tesseract 引擎和英语/波斯语模型"
         );
         return Ok(());
     }

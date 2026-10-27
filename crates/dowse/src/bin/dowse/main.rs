@@ -136,9 +136,7 @@ fn main() -> Result<()> {
             // （常驻的托盘程序不需要这一步，图片交给后台 worker 池慢慢消化）。
             let ocr_stats = drain_ocr_queue(&index_dir()?, DEFAULT_WORKERS)?;
             if !ocr_stats.available {
-                println!(
-                    "未检测到可用的 OCR 语言包，跳过图片文字识别（截图/图片文字不会被索引）。"
-                );
+                println!("未检测到可用的 Tesseract OCR 引擎和英语/波斯语模型，跳过图片文字识别。");
             } else if ocr_stats.processed > 0 {
                 println!("OCR 完成: 识别 {} 张图片", ocr_stats.processed);
             }
@@ -232,7 +230,7 @@ fn add_root_cmd(dir: PathBuf) -> Result<()> {
     // 完整状态（常驻托盘程序才把图片交给后台 worker 池慢慢消化）。
     let ocr_stats = drain_ocr_queue(&index, DEFAULT_WORKERS)?;
     if !ocr_stats.available {
-        println!("未检测到可用的 OCR 语言包，跳过图片文字识别（截图/图片文字不会被索引）。");
+        println!("未检测到可用的 Tesseract OCR 引擎和英语/波斯语模型，跳过图片文字识别。");
     } else if ocr_stats.processed > 0 {
         println!("OCR 完成: 识别 {} 张图片", ocr_stats.processed);
     }

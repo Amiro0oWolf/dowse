@@ -4,15 +4,14 @@
 //! 非汉字"切段：汉字段接 jieba 按中文习惯分词，非汉字段按字母数字切词并统一
 //! 小写。`extract` 模块负责文本抽取——纯文本用 chardetng/encoding_rs 探测
 //! 编码，另外支持 PDF、Office（docx/xlsx/pptx）等常见格式。`ocr`/`ocr_worker`
-//! 模块接入 Windows 系统自带的 OCR 引擎，让截图和图片里的文字也能被搜到
-//! （仅 Windows；其余平台是诚实报"不可用"的桩实现）。`mft`/`usn` 模块在
+//! 模块接入随应用分发的 Tesseract OCR 引擎，让截图和图片里的文字也能被搜到
+//! （桌面应用会携带英语和波斯语模型）。`mft`/`usn` 模块在
 //! NTFS 卷 + 管理员权限下走 MFT 快速枚举和 USN Journal 增量监听，跳过全盘
 //! 目录遍历；拿不到这个前提条件就诚实降级到基于 walkdir + notify 的目录
 //! 遍历/文件监听，两条路径产出的索引结果完全一致，调用方感知不到差别。
 //!
-//! docs.rs 在 Linux 构建机上生成本页文档，`cfg(windows)` 之后的 API（OCR、
-//! NTFS MFT/USN 快速索引）不会出现在这里；要看到完整 API，在 Windows 上本地
-//! 跑 `cargo doc` 即可。
+//! docs.rs 在 Linux 构建机上生成本页文档，Windows NTFS MFT/USN 快速索引 API
+//! 不会出现在这里；要看到完整 API，在 Windows 上本地跑 `cargo doc` 即可。
 //!
 //! # 核心入口
 //!
@@ -105,7 +104,8 @@ pub use indexer::{
     IndexProgress, IndexStats, rebuild_index, rebuild_index_with_progress, remove_dir_all_retrying,
 };
 pub use meta::registered_roots;
-pub use ocr::{is_available, is_persian_available};
+pub use ocr::is_available;
+pub use ocr::set_resource_dir as set_ocr_resource_dir;
 pub use ocr_queue::OcrQueue;
 pub use ocr_worker::{DEFAULT_WORKERS, OcrDrainStats, OcrPipeline, drain_ocr_queue};
 pub use reconcile::{ReconcileStats, reconcile, reconcile_orphans};
