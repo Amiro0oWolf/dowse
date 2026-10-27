@@ -128,23 +128,25 @@ fn persian_image_text_is_searchable_with_bundled_fas_model() -> Result<()> {
     generate_test_image_with_text(&image, "سلام دنیا کتاب فارسی", "Tahoma", 38, true)?;
 
     if let Ok(executable) = std::env::var("TESSERACT_CMD") {
-        for page_segmentation_mode in ["3", "6"] {
-            let output = Command::new(&executable)
-                .arg(&image)
-                .arg("stdout")
-                .arg("-l")
-                .arg("eng+fas")
-                .arg("--psm")
-                .arg(page_segmentation_mode)
-                .arg("--tessdata-dir")
-                .arg(Path::new(&executable).parent().unwrap().join("tessdata"))
-                .output()?;
-            eprintln!(
-                "Direct Persian OCR (PSM {page_segmentation_mode}): status={}, stdout={:?}, stderr={:?}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
-            );
+        for language in ["fas", "eng+fas"] {
+            for page_segmentation_mode in ["3", "6", "11"] {
+                let output = Command::new(&executable)
+                    .arg(&image)
+                    .arg("stdout")
+                    .arg("-l")
+                    .arg(language)
+                    .arg("--psm")
+                    .arg(page_segmentation_mode)
+                    .arg("--tessdata-dir")
+                    .arg(Path::new(&executable).parent().unwrap().join("tessdata"))
+                    .output()?;
+                eprintln!(
+                    "Direct Persian OCR ({language}, PSM {page_segmentation_mode}): status={}, stdout={:?}, stderr={:?}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr),
+                );
+            }
         }
     }
 
