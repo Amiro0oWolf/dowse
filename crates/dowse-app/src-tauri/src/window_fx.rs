@@ -73,6 +73,12 @@ pub fn hide_window(window: &WebviewWindow) {
 }
 
 pub fn toggle_window(window: &WebviewWindow) {
+    if window.is_minimized().unwrap_or(false) {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        let _ = window.emit("dowse://shown", ());
+        return;
+    }
     if window.is_visible().unwrap_or(false) {
         hide_window(window);
     } else {

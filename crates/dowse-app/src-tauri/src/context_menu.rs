@@ -5,8 +5,6 @@ use tauri::menu::{Menu, MenuEvent, MenuItemBuilder};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-use crate::autohide::AutoHideSuppressor;
-
 const ITEM_OPEN: &str = "ctxmenu-open";
 const ITEM_REVEAL: &str = "ctxmenu-reveal";
 const ITEM_COPY: &str = "ctxmenu-copy";
@@ -52,7 +50,6 @@ pub fn show_result_context_menu(
     app: AppHandle,
     window: WebviewWindow,
     target: State<ContextMenuTarget>,
-    suppressor: State<AutoHideSuppressor>,
     paths: Vec<String>,
     primary_path: String,
 ) -> Result<(), String> {
@@ -108,7 +105,6 @@ pub fn show_result_context_menu(
         paths.into_iter().map(PathBuf::from).collect(),
         PathBuf::from(primary_path),
     );
-    let _guard = suppressor.suppress_for_menu();
     if let Err(error) = window.popup_menu(&menu) {
         target.take();
         return Err(error.to_string());

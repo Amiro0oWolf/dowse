@@ -74,6 +74,7 @@ pub(crate) fn dual_form_content(raw: &str) -> String {
 mod engine_impl {
     use std::path::{Path, PathBuf};
 
+    use windows::Globalization::Language;
     use windows::Graphics::Imaging::{BitmapDecoder, SoftwareBitmap};
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::{FileAccessMode, StorageFile};
@@ -92,19 +93,36 @@ mod engine_impl {
     /// 探测系统是否有任何可用的 OCR 语言包。管线启动前调一次；没有就整体停用，
     /// 不崩溃（见设计文档"降级与错误处理"一节）。
     pub fn is_available() -> bool {
-        OcrEngine::TryCreateFromUserProfileLanguages().is_ok()
+        OcrEngine::TryCreateFromUserProfileLanguages().is_ok() || create_persian_engine().is_some()
+    }
+
+    pub fn is_persian_available() -> bool {
+        create_persian_engine().is_some()
+    }
+
+    fn create_persian_engine() -> Option<OcrEngine> {
+        let language = Language::CreateLanguage(&HSTRING::from("fa")).ok()?;
+        OcrEngine::TryCreateFromLanguage(&language).ok()
     }
 
     /// 一个不跨线程共享的 OCR 引擎句柄。worker 池每个线程各自创建一份，绝不共享
     /// 同一个实例——OcrEngine 和 SoftwareBitmap 都不是线程安全的（设计文档第二节）。
-    pub struct Engine(OcrEngine);
+    pub struct Engine(Vec<OcrEngine>);
 
-    /// 创建引擎：用 TryCreateFromUserProfileLanguages 而不是精确语言标签匹配——
-    /// spike 已验证标签写死 "zh-Hans" 会因为系统实际标签是 "zh-Hans-CN" 而匹配失败。
+    /// Persian OCR is tried first when its Windows OCR language pack is installed;
+    /// the user's preferred OCR engine remains the fallback for other languages.
     pub fn create_engine() -> anyhow::Result<Engine> {
-        OcrEngine::TryCreateFromUserProfileLanguages()
-            .map(Engine)
-            .map_err(|e| anyhow::anyhow!("创建 OCR 引擎失败（可能没有任何语言包）: {e}"))
+        let mut engines = Vec::with_capacity(2);
+        if let Some(engine) = create_persian_engine() {
+            engines.push(engine);
+        }
+        if let Ok(engine) = OcrEngine::TryCreateFromUserProfileLanguages() {
+            engines.push(engine);
+        }
+        if engines.is_empty() {
+            anyhow::bail!("创建 OCR 引擎失败（可能没有任何 OCR 语言包）");
+        }
+        Ok(Engine(engines))
     }
 
     /// `StorageFile::GetFileFromPathAsync` 不认 `\\?\` 扩展长度前缀路径——
@@ -133,9 +151,34 @@ mod engine_impl {
     pub fn recognize(engine: &Engine, path: &Path) -> anyhow::Result<String> {
         let bitmap = load_software_bitmap(path)
             .map_err(|e| anyhow::anyhow!("加载图片失败 {}: {e}", path.display()))?;
-        let result = block_on(engine.0.RecognizeAsync(&bitmap))
-            .map_err(|e| anyhow::anyhow!("OCR 识别失败 {}: {e}", path.display()))?;
-        Ok(result.Text()?.to_string())
+        let mut fallback = None;
+        let mut last_error = None;
+        for recognizer in &engine.0 {
+            match block_on(recognizer.RecognizeAsync(&bitmap)).and_then(|result| result.Text()) {
+                Ok(text) => {
+                    let text = text.to_string();
+                    if text.chars().any(is_arabic_script) {
+                        return Ok(text);
+                    }
+                    fallback.get_or_insert(text);
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        if let Some(text) = fallback {
+            return Ok(text);
+        }
+        Err(anyhow::anyhow!(
+            "OCR 识别失败 {}: {}",
+            path.display(),
+            last_error
+                .map(|error| error.to_string())
+                .unwrap_or_else(|| "没有可用的 OCR 引擎".to_string())
+        ))
+    }
+
+    fn is_arabic_script(character: char) -> bool {
+        matches!(character as u32, 0x0600..=0x06FF | 0x0750..=0x077F | 0x08A0..=0x08FF)
     }
 
     #[cfg(test)]
@@ -179,6 +222,10 @@ mod engine_impl {
         false
     }
 
+    pub fn is_persian_available() -> bool {
+        false
+    }
+
     pub struct Engine;
 
     pub fn create_engine() -> anyhow::Result<Engine> {
@@ -194,6 +241,12 @@ mod engine_impl {
 /// 提前决定要不要显示"OCR 不可用"的引导文案。
 pub fn is_available() -> bool {
     engine_impl::is_available()
+}
+
+/// Whether Windows has the Persian OCR language pack required to recognize Persian
+/// text in images. The standard OCR engine remains available without it.
+pub fn is_persian_available() -> bool {
+    engine_impl::is_persian_available()
 }
 
 pub(crate) use engine_impl::{create_engine, recognize};

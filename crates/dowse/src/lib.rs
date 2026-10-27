@@ -105,7 +105,7 @@ pub use indexer::{
     IndexProgress, IndexStats, rebuild_index, rebuild_index_with_progress, remove_dir_all_retrying,
 };
 pub use meta::registered_roots;
-pub use ocr::is_available;
+pub use ocr::{is_available, is_persian_available};
 pub use ocr_queue::OcrQueue;
 pub use ocr_worker::{DEFAULT_WORKERS, OcrDrainStats, OcrPipeline, drain_ocr_queue};
 pub use reconcile::{ReconcileStats, reconcile, reconcile_orphans};

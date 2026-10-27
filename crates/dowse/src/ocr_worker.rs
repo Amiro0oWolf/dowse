@@ -67,6 +67,11 @@ impl OcrPipeline {
             eprintln!("未检测到可用的 OCR 语言包，OCR 管线已停用（截图/图片文字不会被索引）");
             return None;
         }
+        if !ocr::is_persian_available() {
+            eprintln!(
+                "未检测到波斯语 OCR 语言包；如需识别图片中的波斯语，请在 Windows“设置 > 时间和语言 > 语言和区域”中安装波斯语 OCR 功能"
+            );
+        }
 
         let queue = OcrQueue::for_index_dir(&index_dir);
         let stop = Arc::new(AtomicBool::new(false));

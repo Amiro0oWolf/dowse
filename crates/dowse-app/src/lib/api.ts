@@ -67,10 +67,25 @@ export function fileIcon(ext: string): Promise<string | null> {
 	return invoke('file_icon', { ext });
 }
 
-/// 图钉固定开关：会话级，不落盘。固定期间失焦不再自动隐藏浮窗
-/// （见 Rust 侧 autohide.rs 的 AutoHideSuppressor）。
+/// 图钉固定开关：切换窗口是否置顶。
 export function setPinned(pinned: boolean): Promise<void> {
 	return invoke('set_pinned', { pinned });
+}
+
+export function minimizeWindow(): Promise<void> {
+	return invoke('minimize_window');
+}
+
+export function toggleMaximize(): Promise<boolean> {
+	return invoke('toggle_maximize');
+}
+
+export function exitApp(): Promise<void> {
+	return invoke('exit_app');
+}
+
+export function persianOcrAvailable(): Promise<boolean> {
+	return invoke('persian_ocr_available');
 }
 
 /// 结果行右键：在给定选择上弹出 Win32 原生上下文菜单。

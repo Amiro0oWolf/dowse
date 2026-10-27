@@ -7,7 +7,6 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::HotkeyState;
-use crate::autohide::AutoHideSuppressor;
 use crate::config::ConfigState;
 use crate::file_icons::FileIconCache;
 use crate::highlight::{TextSegment, highlight_name, segments_from_ranges};
@@ -591,12 +590,35 @@ pub fn add_root(app: tauri::AppHandle, dir: String) -> Result<IndexStatsDto, Str
     result
 }
 
-/// 图钉固定开关：前端点了图钉按钮就调这个命令，把会话级的"抑制失焦自动
-/// 隐藏"状态同步到 Rust 侧（见 autohide.rs 的 `AutoHideSuppressor`）。
-/// 不落盘——重启应用后前端按钮状态和这里的计数器都回到初始值。
+/// 图钉固定开关：将窗口切换为置顶状态。
 #[tauri::command]
-pub fn set_pinned(suppressor: State<AutoHideSuppressor>, pinned: bool) {
-    suppressor.set_pinned(pinned);
+pub fn set_pinned(window: tauri::WebviewWindow, pinned: bool) -> Result<(), String> {
+    window.set_always_on_top(pinned).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn toggle_maximize(window: tauri::WebviewWindow) -> Result<bool, String> {
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        window.unmaximize().map_err(|e| e.to_string())?;
+    } else {
+        window.maximize().map_err(|e| e.to_string())?;
+    }
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+pub fn persian_ocr_available() -> bool {
+    dowse::is_persian_available()
 }
 
 /// 索引规则面板的读取入口：取当前索引目录旁 rules.json 里的规则（没配过就

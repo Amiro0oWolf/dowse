@@ -76,6 +76,13 @@ interface Strings {
 	// 图钉
 	pinUnpin: string;
 	pin: string;
+	windowMinimize: string;
+	windowMaximize: string;
+	windowRestore: string;
+	windowExit: string;
+	persianOcrTitle: string;
+	persianOcrAvailable: string;
+	persianOcrMissing: string;
 	// 底部快捷键条
 	scHide: string;
 	scCopyFiles: string;
@@ -210,8 +217,16 @@ const zh: Strings = {
 	previewEmpty: '没有可预览的文本内容。',
 	resizePreviewPane: '调整结果与预览区域宽度',
 	resultListLabel: '搜索结果',
-	pinUnpin: '取消固定（恢复失焦自动隐藏）',
-	pin: '固定（失焦不再自动隐藏）',
+	pinUnpin: '取消置顶',
+	pin: '置顶窗口',
+	windowMinimize: '最小化',
+	windowMaximize: '最大化',
+	windowRestore: '还原',
+	windowExit: '退出',
+	persianOcrTitle: '波斯语图片 OCR',
+	persianOcrAvailable: '已检测到波斯语 OCR 语言包。',
+	persianOcrMissing:
+		'未检测到 Windows 波斯语 OCR 语言包。请在“设置 > 时间和语言 > 语言和区域”中安装波斯语 OCR 功能，然后重建索引。',
 	scHide: '隐藏',
 	scCopyFiles: '复制文件',
 	scCutFiles: '剪切文件',
@@ -336,8 +351,16 @@ const en: Strings = {
 	previewEmpty: 'No previewable text content.',
 	resizePreviewPane: 'Resize results and preview panes',
 	resultListLabel: 'Search results',
-	pinUnpin: 'Unpin (resume auto-hide on blur)',
-	pin: 'Pin (stop auto-hide on blur)',
+	pinUnpin: 'Unpin window',
+	pin: 'Keep window on top',
+	windowMinimize: 'Minimize',
+	windowMaximize: 'Maximize',
+	windowRestore: 'Restore',
+	windowExit: 'Exit',
+	persianOcrTitle: 'Persian image OCR',
+	persianOcrAvailable: 'Persian OCR language pack detected.',
+	persianOcrMissing:
+		'Windows Persian OCR is not installed. Install the Persian OCR feature under Settings > Time & language > Language & region, then rebuild your index.',
 	scHide: 'Hide',
 	scCopyFiles: 'Copy files',
 	scCutFiles: 'Cut files',

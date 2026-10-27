@@ -21,6 +21,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import GhostDropdown from '$lib/components/GhostDropdown.svelte';
 	import PinButton from '$lib/components/PinButton.svelte';
+	import WindowControls from '$lib/components/WindowControls.svelte';
 	import SettingsButton from '$lib/components/SettingsButton.svelte';
 	import AnimatedNumber from '$lib/components/AnimatedNumber.svelte';
 	import ShortcutOverlay from '$lib/components/ShortcutOverlay.svelte';
@@ -1176,6 +1177,7 @@
 			/>
 			<PinButton {pinned} onclick={togglePinned} />
 			<SettingsButton onclick={openSettingsPanel} />
+			<WindowControls />
 		</div>
 	</div>
 

@@ -1,4 +1,3 @@
-mod autohide;
 mod commands;
 mod config;
 mod context_menu;
@@ -7,8 +6,6 @@ mod highlight;
 mod i18n;
 mod indexing_status;
 mod logging;
-#[cfg(windows)]
-mod native_autohide;
 mod perf;
 mod rebuild;
 mod state;
@@ -19,12 +16,9 @@ mod window_fx;
 use std::sync::Mutex;
 
 use tauri::Manager;
-#[cfg(not(windows))]
-use tauri::WindowEvent;
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-use autohide::AutoHideSuppressor;
 use config::ConfigState;
 use context_menu::ContextMenuTarget;
 use file_icons::FileIconCache;
@@ -115,7 +109,6 @@ pub fn run() {
         .manage(SearchState::load_initial())
         .manage(WatchController::new())
         .manage(FileIconCache::new())
-        .manage(AutoHideSuppressor::new())
         .manage(ContextMenuTarget::new())
         .manage(IndexingStatus::new())
         .manage(RebuildGuard::new())
@@ -141,6 +134,10 @@ pub fn run() {
             commands::set_lang,
             commands::file_icon,
             commands::set_pinned,
+            commands::minimize_window,
+            commands::toggle_maximize,
+            commands::exit_app,
+            commands::persian_ocr_available,
             commands::hide_window,
             commands::report_shown_perf,
             commands::report_search_perf,
@@ -164,9 +161,6 @@ pub fn run() {
             // 结果行右键菜单（context_menu::show_result_context_menu）在这个窗口上
             // popup，选中项通过这里回调；托盘菜单是另一套独立的事件注册，见 tray.rs。
             window.on_menu_event(context_menu::handle_context_menu_event);
-
-            #[cfg(windows)]
-            native_autohide::install(&window)?;
 
             let cfg = app.state::<ConfigState>().get();
             #[cfg(windows)]
@@ -198,18 +192,6 @@ pub fn run() {
             }
 
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            // Windows uses top-level activation, not WebView keyboard focus.
-            // Native move/resize temporarily moves focus away from the WebView.
-            #[cfg(windows)]
-            let _ = (window, event);
-            #[cfg(not(windows))]
-            if let WindowEvent::Focused(false) = event {
-                if !window.state::<AutoHideSuppressor>().is_suppressed() {
-                    let _ = window.hide();
-                }
-            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -52,6 +52,7 @@
 	let autostartEnabled = $state(false);
 	let lang = $state<LangOption>('auto');
 	let langChanged = $state(false); // 改过语言 → 显示"重启后生效"
+	let persianOcrAvailable = $state<boolean | null>(null);
 
 	// ── 改键捕获态 ──────────────────────────────────────────────────────────
 	let capturing = $state(false); // 正在等用户按下新组合键
@@ -291,6 +292,13 @@
 				// 静默：通用区退回默认展示值即可。
 			});
 
+		api
+			.persianOcrAvailable()
+			.then((available) => {
+				persianOcrAvailable = available;
+			})
+			.catch((err) => console.error('persianOcrAvailable failed', err));
+
 		// 索引规则初值（原逻辑）。
 		api
 			.getRules()
@@ -442,6 +450,19 @@
 				{#if langChanged}
 					<p class="field-hint restart">{t.setLangRestartHint}</p>
 				{/if}
+			</div>
+
+			<div class="field">
+				<span class="field-label">{t.persianOcrTitle}</span>
+				<p class="field-hint" class:restart={persianOcrAvailable === false} role="status">
+					{#if persianOcrAvailable === null}
+						—
+					{:else if persianOcrAvailable}
+						{t.persianOcrAvailable}
+					{:else}
+						{t.persianOcrMissing}
+					{/if}
+				</p>
 			</div>
 		{:else}
 			<!-- 索引规则（原三项原样迁入，保留 保存/立即重建 逻辑） -->

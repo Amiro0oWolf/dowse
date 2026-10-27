@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+const OCR_ENGINE_VERSION: u32 = 2;
+
 /// 一条待处理记录：入队时的 (mtime, size)。worker 处理完之后拿当时的三元组去核对——
 /// 如果文件在排队期间又变了，仍然按最新状态重新识别（见 OcrQueue::enqueue 的覆盖语义）。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -33,10 +35,22 @@ struct Processed {
 /// 上含反斜杠，直接当 serde_json 的 map key类型没问题，但 String 是这个代码库
 /// 一贯的路径序列化方式（tantivy 的 path 字段也是存 to_string_lossy 的结果），
 /// 保持一致，也省得依赖 PathBuf 的 Serialize 在 map key 位置的实现细节。
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 struct QueueState {
+    ocr_engine_version: u32,
     pending: HashMap<String, Stat>,
     processed: HashMap<String, Processed>,
+}
+
+impl Default for QueueState {
+    fn default() -> Self {
+        Self {
+            ocr_engine_version: OCR_ENGINE_VERSION,
+            pending: HashMap::new(),
+            processed: HashMap::new(),
+        }
+    }
 }
 
 fn key_of(path: &Path) -> String {
@@ -179,7 +193,7 @@ fn queue_path(index_dir: &Path) -> PathBuf {
 /// 只是个"能省则省"的进度缓存，丢了大不了重新识别一遍，不该拖累索引整体可用性。
 fn load_state(index_dir: &Path) -> QueueState {
     let path = queue_path(index_dir);
-    match std::fs::read(&path) {
+    let mut state = match std::fs::read(&path) {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|err| {
             eprintln!(
                 "OCR 队列状态解析失败，按空队列处理 {}: {err}",
@@ -188,7 +202,15 @@ fn load_state(index_dir: &Path) -> QueueState {
             QueueState::default()
         }),
         Err(_) => QueueState::default(),
+    };
+    if state.ocr_engine_version != OCR_ENGINE_VERSION {
+        if !state.processed.is_empty() {
+            eprintln!("OCR 引擎版本已更新，清除旧识别缓存并重新识别图片");
+        }
+        state.processed.clear();
+        state.ocr_engine_version = OCR_ENGINE_VERSION;
     }
+    state
 }
 
 fn save_state(index_dir: &Path, state: &QueueState) -> Result<()> {
@@ -239,6 +261,32 @@ mod tests {
         let state = load_state(&index_dir);
         assert!(state.pending.is_empty());
         assert!(state.processed.is_empty());
+    }
+
+    #[test]
+    fn load_state_invalidates_processed_content_from_an_older_ocr_engine() {
+        let dir = tempfile::tempdir().unwrap();
+        let index_dir = dir.path().join("index");
+        let mut old_state = QueueState::default();
+        old_state.ocr_engine_version = OCR_ENGINE_VERSION - 1;
+        old_state.pending.insert(
+            "C:\\shots\\pending.png".to_string(),
+            Stat { mtime: 1, size: 2 },
+        );
+        old_state.processed.insert(
+            "C:\\shots\\old.png".to_string(),
+            Processed {
+                mtime: 3,
+                size: 4,
+                content: "old OCR text".to_string(),
+            },
+        );
+        save_state(&index_dir, &old_state).unwrap();
+
+        let refreshed = load_state(&index_dir);
+        assert!(refreshed.processed.is_empty());
+        assert_eq!(refreshed.pending.len(), 1);
+        assert_eq!(refreshed.ocr_engine_version, OCR_ENGINE_VERSION);
     }
 
     /// 同一个索引目录用两种路径写法（有无 `\\?\` 扩展长度前缀）传进来，应该
