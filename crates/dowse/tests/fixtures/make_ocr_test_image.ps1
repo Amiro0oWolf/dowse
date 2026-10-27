@@ -25,23 +25,19 @@ if (-not $Text) {
 }
 
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.Windows.Forms
 
 $bmp = New-Object System.Drawing.Bitmap $Width, $Height
 $g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
 $g.Clear([System.Drawing.Color]::White)
 
 $font = New-Object System.Drawing.Font($FontFamily, $FontSize, [System.Drawing.FontStyle]::Regular)
-$brush = [System.Drawing.Brushes]::Black
+$rect = New-Object System.Drawing.Rectangle(20, 20, ($Width - 40), ($Height - 40))
+$flags = [System.Windows.Forms.TextFormatFlags]::NoPadding
 if ($RightToLeft) {
-    $format = New-Object System.Drawing.StringFormat
-    $format.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
-    $rect = New-Object System.Drawing.RectangleF(20, 20, ($Width - 40), ($Height - 40))
-    $g.DrawString($Text, $font, $brush, $rect, $format)
-    $format.Dispose()
-} else {
-    $g.DrawString($Text, $font, $brush, 20, 20)
+    $flags = $flags -bor [System.Windows.Forms.TextFormatFlags]::RightToLeft -bor [System.Windows.Forms.TextFormatFlags]::Right
 }
+[System.Windows.Forms.TextRenderer]::DrawText($g, $Text, $font, $rect, [System.Drawing.Color]::Black, $flags)
 
 $parent = Split-Path -Parent $Path
 if ($parent -and -not (Test-Path $parent)) {
