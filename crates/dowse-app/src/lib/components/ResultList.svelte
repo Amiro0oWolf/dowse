@@ -8,14 +8,18 @@
 	let {
 		hits,
 		selectedIndex,
+		selectedIndices,
 		onhover,
 		onselect,
+		onopen,
 		oncontextmenu
 	}: {
 		hits: SearchHit[];
 		selectedIndex: number;
+		selectedIndices: Set<number>;
 		onhover: (i: number) => void;
-		onselect: (i: number) => void;
+		onselect: (i: number, event: MouseEvent) => void;
+		onopen: (i: number) => void;
 		oncontextmenu: (i: number) => void;
 	} = $props();
 
@@ -50,14 +54,22 @@
 	});
 </script>
 
-<div class="list" bind:this={listEl} role="listbox" aria-label={t.resultListLabel}>
+<div
+	class="list"
+	bind:this={listEl}
+	role="listbox"
+	aria-label={t.resultListLabel}
+	aria-multiselectable="true"
+>
 	{#each hits as hit, i (hit.path)}
-		<div data-idx={i}>
+		<div data-idx={i} role="presentation">
 			<ResultRow
 				{hit}
-				selected={i === selectedIndex}
+				selected={selectedIndices.has(i)}
+				focused={i === selectedIndex}
 				onhover={() => onhover(i)}
-				onselect={() => onselect(i)}
+				onselect={(event) => onselect(i, event)}
+				onopen={() => onopen(i)}
 				oncontextmenu={() => oncontextmenu(i)}
 			/>
 		</div>

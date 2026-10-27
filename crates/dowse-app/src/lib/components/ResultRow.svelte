@@ -7,22 +7,25 @@
 	let {
 		hit,
 		selected,
+		focused,
 		onhover,
 		onselect,
+		onopen,
 		oncontextmenu
 	}: {
 		hit: SearchHit;
 		selected: boolean;
+		focused: boolean;
 		onhover: () => void;
-		onselect: () => void;
+		onselect: (event: MouseEvent) => void;
+		onopen: () => void;
 		oncontextmenu: () => void;
 	} = $props();
 
-	// 右键先把这一行选中（跟资源管理器的习惯一致），再交给父组件弹原生菜单——
-	// 菜单本身是 Win32 原生绘制的（见 Rust 侧 context_menu.rs），这里只负责触发。
+	// 菜单本身是 Win32 原生绘制的（见 Rust 侧 context_menu.rs）；父组件负责
+	// 保留当前多选组，或在右键未选中行时改为只选中该行。
 	function handleContextMenu(e: MouseEvent) {
 		e.preventDefault();
-		onhover();
 		oncontextmenu();
 	}
 
@@ -42,11 +45,14 @@
 
 <button
 	type="button"
+	role="option"
 	class="row"
 	class:selected
+	class:focused
+	aria-selected={selected}
 	onmouseenter={onhover}
 	onclick={onselect}
-	ondblclick={onselect}
+	ondblclick={onopen}
 	oncontextmenu={handleContextMenu}
 >
 	<span class="row-icon"><FileIcon path={hit.path} /></span>
@@ -89,6 +95,15 @@
 	   在切换选中时抖动 1px 布局，视觉上跟未选中时完全一样"没有边框"。 */
 	.row.selected {
 		background: var(--accent-soft);
+	}
+
+	.row.focused:not(.selected) {
+		background: var(--row-hover);
+	}
+
+	.row.focused {
+		outline: 1px solid var(--accent-strong);
+		outline-offset: -1px;
 	}
 
 	.row-icon {

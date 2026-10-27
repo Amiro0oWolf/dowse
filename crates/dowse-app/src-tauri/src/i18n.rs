@@ -78,6 +78,11 @@ pub struct Strings {
     pub ctx_reveal: &'static str,
     pub ctx_copy_path: &'static str,
     pub ctx_copy_name: &'static str,
+    pub ctx_copy: &'static str,
+    pub ctx_cut: &'static str,
+    pub ctx_delete: &'static str,
+    pub ctx_copy_paths: &'static str,
+    pub ctx_copy_names: &'static str,
 }
 
 const ZH: Strings = Strings {
@@ -103,6 +108,11 @@ const ZH: Strings = Strings {
     ctx_reveal: "打开所在文件夹",
     ctx_copy_path: "复制完整路径",
     ctx_copy_name: "复制文件名",
+    ctx_copy: "复制",
+    ctx_cut: "剪切",
+    ctx_delete: "删除",
+    ctx_copy_paths: "复制路径",
+    ctx_copy_names: "复制名称",
 };
 
 const EN: Strings = Strings {
@@ -128,6 +138,11 @@ const EN: Strings = Strings {
     ctx_reveal: "Reveal in File Explorer",
     ctx_copy_path: "Copy full path",
     ctx_copy_name: "Copy file name",
+    ctx_copy: "Copy",
+    ctx_cut: "Cut",
+    ctx_delete: "Delete",
+    ctx_copy_paths: "Copy paths",
+    ctx_copy_names: "Copy names",
 };
 
 /// 当前语言对应的整张文案表。

@@ -20,7 +20,7 @@
 			{ label: t.soRevealFolder, keys: ['Ctrl', '↵'] }
 		],
 		[
-			{ label: t.soCopyPath, keys: ['Ctrl', 'C'] },
+			{ label: t.soCopyFiles, keys: ['Ctrl', 'C'] },
 			{ label: t.soFilterType, keys: ['Ctrl', 'P'] },
 			{ label: t.soSort, keys: ['Ctrl', 'S'] },
 			{ label: t.soPin, keys: ['Ctrl', 'D'] },

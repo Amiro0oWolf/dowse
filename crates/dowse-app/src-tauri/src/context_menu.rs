@@ -2,34 +2,38 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuEvent, MenuItemBuilder};
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::autohide::AutoHideSuppressor;
 
 const ITEM_OPEN: &str = "ctxmenu-open";
 const ITEM_REVEAL: &str = "ctxmenu-reveal";
-const ITEM_COPY_PATH: &str = "ctxmenu-copy-path";
-const ITEM_COPY_NAME: &str = "ctxmenu-copy-name";
+const ITEM_COPY: &str = "ctxmenu-copy";
+const ITEM_CUT: &str = "ctxmenu-cut";
+const ITEM_DELETE: &str = "ctxmenu-delete";
+const ITEM_COPY_PATHS: &str = "ctxmenu-copy-paths";
+const ITEM_COPY_NAMES: &str = "ctxmenu-copy-names";
 
-/// 右键菜单弹出时圈定的目标文件路径。`popup_menu` 是阻塞调用（见
-/// `show_result_context_menu`），同一时刻只会有一个原生菜单在显示，所以
-/// 用一个 `Mutex<Option<PathBuf>>` 记"这次菜单是对着哪个文件弹出的"就够，
-/// 不需要把路径编进菜单项 id 里去绕开 Windows 路径里的特殊字符。
+struct ContextMenuSelection {
+    paths: Vec<PathBuf>,
+    primary_path: PathBuf,
+}
+
 #[derive(Default)]
-pub struct ContextMenuTarget(Mutex<Option<PathBuf>>);
+pub struct ContextMenuTarget(Mutex<Option<ContextMenuSelection>>);
 
 impl ContextMenuTarget {
     pub fn new() -> Self {
         Self::default()
     }
 
-    fn set(&self, path: PathBuf) {
-        *self.0.lock().expect("context menu target mutex poisoned") = Some(path);
+    fn set(&self, paths: Vec<PathBuf>, primary_path: PathBuf) {
+        *self.0.lock().expect("context menu target mutex poisoned") =
+            Some(ContextMenuSelection { paths, primary_path });
     }
 
-    /// 取走并清空，避免上一次菜单的目标路径残留到下一次不相关的菜单事件上。
-    fn take(&self) -> Option<PathBuf> {
+    fn take(&self) -> Option<ContextMenuSelection> {
         self.0
             .lock()
             .expect("context menu target mutex poisoned")
@@ -37,95 +41,167 @@ impl ContextMenuTarget {
     }
 }
 
-/// 在结果行右键处弹出 Win32 原生上下文菜单：打开 / 打开所在文件夹 /
-/// 复制完整路径 / 复制文件名。菜单本身是系统绘制的（Tauri 的 `Menu::popup`
-/// 底层是 `TrackPopupMenu`），不是前端画的假菜单——这正是"原生风格"的来源。
-///
-/// `popup_menu` 会阻塞到菜单被选中或取消才返回（Win32 `TrackPopupMenu` 是
-/// 模态调用），选中项通过 `window.on_menu_event`（见 lib.rs 的 setup、本文件
-/// 的 `handle_context_menu_event`）异步回调，不是这里的返回值。
 #[tauri::command]
 pub fn show_result_context_menu(
     app: AppHandle,
     window: WebviewWindow,
     target: State<ContextMenuTarget>,
     suppressor: State<AutoHideSuppressor>,
-    path: String,
+    paths: Vec<String>,
+    primary_path: String,
 ) -> Result<(), String> {
-    target.set(PathBuf::from(&path));
+    if paths.is_empty() || !paths.iter().any(|path| path == &primary_path) {
+        return Err("上下文菜单目标无效".to_string());
+    }
 
     let s = crate::i18n::strings();
+    let multiple = paths.len() > 1;
     let open_item = MenuItemBuilder::with_id(ITEM_OPEN, s.ctx_open)
         .build(&app)
         .map_err(|e| e.to_string())?;
     let reveal_item = MenuItemBuilder::with_id(ITEM_REVEAL, s.ctx_reveal)
         .build(&app)
         .map_err(|e| e.to_string())?;
-    let copy_path_item = MenuItemBuilder::with_id(ITEM_COPY_PATH, s.ctx_copy_path)
+    let copy_item = MenuItemBuilder::with_id(ITEM_COPY, s.ctx_copy)
         .build(&app)
         .map_err(|e| e.to_string())?;
-    let copy_name_item = MenuItemBuilder::with_id(ITEM_COPY_NAME, s.ctx_copy_name)
+    let cut_item = MenuItemBuilder::with_id(ITEM_CUT, s.ctx_cut)
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+    let delete_item = MenuItemBuilder::with_id(ITEM_DELETE, s.ctx_delete)
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+    let copy_paths_label = if multiple { s.ctx_copy_paths } else { s.ctx_copy_path };
+    let copy_names_label = if multiple { s.ctx_copy_names } else { s.ctx_copy_name };
+    let copy_paths_item = MenuItemBuilder::with_id(ITEM_COPY_PATHS, copy_paths_label)
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+    let copy_names_item = MenuItemBuilder::with_id(ITEM_COPY_NAMES, copy_names_label)
         .build(&app)
         .map_err(|e| e.to_string())?;
 
-    let menu = Menu::with_items(
-        &app,
-        &[&open_item, &reveal_item, &copy_path_item, &copy_name_item],
-    )
+    let menu = if multiple {
+        Menu::with_items(
+            &app,
+            &[
+                &open_item,
+                &reveal_item,
+                &copy_item,
+                &cut_item,
+                &delete_item,
+                &copy_paths_item,
+                &copy_names_item,
+            ],
+        )
+    } else {
+        Menu::with_items(&app, &[&open_item, &reveal_item, &copy_paths_item, &copy_names_item])
+    }
     .map_err(|e| e.to_string())?;
 
-    // 原生菜单抢焦点期间临时抑制失焦自动隐藏；guard 在本函数返回时释放
-    // （不管菜单是被选中还是直接取消），不会因为提前 return 漏掉配对的释放。
+    target.set(
+        paths.into_iter().map(PathBuf::from).collect(),
+        PathBuf::from(primary_path),
+    );
     let _guard = suppressor.suppress_for_menu();
-    window.popup_menu(&menu).map_err(|e| e.to_string())?;
+    if let Err(error) = window.popup_menu(&menu) {
+        target.take();
+        return Err(error.to_string());
+    }
     Ok(())
 }
 
-/// 注册在 `main` 窗口上（见 lib.rs 的 `setup`），处理该窗口弹出的原生菜单的
-/// 选中事件——目前只有结果行右键菜单这一处会在这个窗口上弹菜单。跟托盘菜单
-/// 的事件回调（tray.rs 的 `handle_menu_event`）是两套独立的注册，互不影响。
-///
-/// 四个动作里"打开"/"打开所在文件夹"直接调用 commands.rs 里已经给前端用的
-/// 同一个函数（`open_file`/`reveal_in_folder` 本身就是普通 Rust 函数，
-/// `#[tauri::command]` 只是给它们额外挂了 invoke 分发，直接调用不绕 IPC）；
-/// 复制到剪贴板走 Rust 侧的剪贴板插件——原生菜单的选中事件发生在 Rust 侧，
-/// 没有 JS 上下文可以调用前端已有的 `navigator.clipboard.writeText`，
-/// 所以剪贴板这一步是新增的最小实现。
 pub fn handle_context_menu_event(window: &tauri::Window, event: MenuEvent) {
     let id = event.id().as_ref();
-    if ![ITEM_OPEN, ITEM_REVEAL, ITEM_COPY_PATH, ITEM_COPY_NAME].contains(&id) {
-        // 不是本模块关心的菜单项（比如未来窗口菜单栏加了别的东西），不消费目标路径。
+    if ![
+        ITEM_OPEN,
+        ITEM_REVEAL,
+        ITEM_COPY,
+        ITEM_CUT,
+        ITEM_DELETE,
+        ITEM_COPY_PATHS,
+        ITEM_COPY_NAMES,
+    ]
+    .contains(&id)
+    {
         return;
     }
 
     let app = window.app_handle();
-    let Some(path) = app.state::<ContextMenuTarget>().take() else {
+    let Some(selection) = app.state::<ContextMenuTarget>().take() else {
         return;
     };
-    let path = path.to_string_lossy().into_owned();
+    let paths: Vec<String> = selection
+        .paths
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    let file_ops_window = app.get_webview_window("main");
 
     match id {
         ITEM_OPEN => {
-            if let Err(err) = crate::commands::open_file(app.clone(), path) {
-                eprintln!("右键菜单打开文件失败: {err}");
+            for path in paths {
+                if let Err(err) = crate::commands::open_file(app.clone(), path) {
+                    eprintln!("右键菜单打开文件失败: {err}");
+                }
             }
         }
         ITEM_REVEAL => {
-            if let Err(err) = crate::commands::reveal_in_folder(path) {
+            if let Err(err) = crate::commands::reveal_in_folder(
+                selection.primary_path.to_string_lossy().into_owned(),
+            ) {
                 eprintln!("右键菜单定位文件夹失败: {err}");
             }
         }
-        ITEM_COPY_PATH => {
-            if let Err(err) = app.clipboard().write_text(path) {
+        ITEM_COPY => {
+            let result = file_ops_window
+                .clone()
+                .ok_or_else(|| "主窗口不存在".to_string())
+                .and_then(|window| crate::commands::copy_files(window, paths));
+            if let Err(err) = result {
+                eprintln!("右键菜单复制文件失败: {err}");
+            }
+        }
+        ITEM_CUT => {
+            let result = file_ops_window
+                .clone()
+                .ok_or_else(|| "主窗口不存在".to_string())
+                .and_then(|window| crate::commands::cut_files(window, paths));
+            if let Err(err) = result {
+                eprintln!("右键菜单剪切文件失败: {err}");
+            }
+        }
+        ITEM_DELETE => {
+            let deleted_paths = paths.clone();
+            let result = file_ops_window
+                .clone()
+                .ok_or_else(|| "主窗口不存在".to_string())
+                .and_then(|window| crate::commands::delete_files(window, paths));
+            match result {
+                Ok(()) => {
+                    if let Err(err) = app.emit("dowse://files-deleted", deleted_paths) {
+                        eprintln!("右键菜单删除文件后通知界面失败: {err}");
+                    }
+                }
+                Err(err) => eprintln!("右键菜单删除文件失败: {err}"),
+            }
+        }
+        ITEM_COPY_PATHS => {
+            if let Err(err) = app.clipboard().write_text(paths.join("\r\n")) {
                 eprintln!("右键菜单复制路径失败: {err}");
             }
         }
-        ITEM_COPY_NAME => {
-            let name = std::path::Path::new(&path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or(path);
-            if let Err(err) = app.clipboard().write_text(name) {
+        ITEM_COPY_NAMES => {
+            let names = selection
+                .paths
+                .iter()
+                .map(|path| {
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+                })
+                .collect::<Vec<_>>()
+                .join("\r\n");
+            if let Err(err) = app.clipboard().write_text(names) {
                 eprintln!("右键菜单复制文件名失败: {err}");
             }
         }

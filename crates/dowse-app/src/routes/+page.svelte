@@ -66,6 +66,8 @@
 	let pageIndex = $state(0);
 	let searchPending = $state(false);
 	let selectedIndex = $state(0);
+	let selectedIndices = $state(new Set<number>());
+	let selectionAnchor = $state(0);
 	let hasIndex = $state<boolean | null>(null);
 	let numDocs = $state(0);
 	/** 已注册的全部索引根（已过 display_path 清洗），空态逐行列出。 */
@@ -247,6 +249,8 @@
 			hits = [];
 			totalHits = 0;
 			selectedIndex = 0;
+			selectedIndices = new Set();
+			selectionAnchor = 0;
 			lastSearchMs = null;
 			searchPending = false;
 			return;
@@ -274,6 +278,8 @@
 				hits = results.hits;
 				totalHits = results.total;
 				selectedIndex = pendingPageSelection === 'last' ? Math.max(0, results.hits.length - 1) : 0;
+				selectedIndices = results.hits.length > 0 ? new Set([selectedIndex]) : new Set();
+				selectionAnchor = selectedIndex;
 				pendingPageSelection = 'first';
 				lastSearchMs = performance.now() - startedAt;
 				reportSearchPerf(keystrokeAt, startedAt, token);
@@ -440,9 +446,70 @@
 			else api.hideWindow().catch((err) => console.error('hideWindow failed', err));
 			return;
 		}
-		if (!e.ctrlKey || (e.key !== ',' && e.code !== 'Comma')) return;
-		e.preventDefault();
-		openSettingsPanel();
+		if (e.ctrlKey && (e.key === ',' || e.code === 'Comma')) {
+			e.preventDefault();
+			openSettingsPanel();
+			return;
+		}
+
+		const target = e.target;
+		const isSearchInput = target === inputEl;
+		const inResults =
+			target instanceof HTMLElement && target.closest('[role="listbox"]') !== null;
+		if (!isSearchInput && !inResults) return;
+
+		if (inResults && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+			e.preventDefault();
+			if (hits.length === 0) return;
+			if (e.key === 'ArrowDown' && selectedIndex === hits.length - 1 && pageIndex + 1 < totalPages) {
+				goToPage(pageIndex + 1);
+			} else if (e.key === 'ArrowUp' && selectedIndex === 0 && pageIndex > 0) {
+				goToPage(pageIndex - 1, 'last');
+			} else {
+				moveResultSelection(
+					selectedIndex + (e.key === 'ArrowDown' ? 1 : -1),
+					e.shiftKey,
+					e.ctrlKey && !e.shiftKey
+				);
+			}
+			return;
+		}
+		if (inResults && e.key === 'Enter') {
+			e.preventDefault();
+			if (e.ctrlKey) revealSelected();
+			else openAt(selectedIndex);
+			return;
+		}
+		if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+			if (
+				isSearchInput &&
+				inputEl &&
+				inputEl.selectionStart !== null &&
+				inputEl.selectionStart !== inputEl.selectionEnd
+			) {
+				return;
+			}
+			e.preventDefault();
+			copySelectedFiles();
+			return;
+		}
+		if (e.ctrlKey && e.key.toLowerCase() === 'x') {
+			if (
+				isSearchInput &&
+				inputEl &&
+				inputEl.selectionStart !== null &&
+				inputEl.selectionStart !== inputEl.selectionEnd
+			) {
+				return;
+			}
+			e.preventDefault();
+			cutSelectedFiles();
+			return;
+		}
+		if (inResults && e.key === 'Delete') {
+			e.preventDefault();
+			deleteSelectedFiles();
+		}
 	}
 
 	/// 空态"添加文件夹"链接：多根索引场景下追加一个根，不动现有内容——跟
@@ -490,9 +557,12 @@
 	}
 
 	function openSelected() {
-		if (!selectedHit) return;
+		const paths = selectedPaths();
+		if (paths.length === 0) return;
 		recordSearchHistory();
-		api.openFile(selectedHit.path).catch((err) => showToast(t.toastOpenFailed(String(err))));
+		for (const path of paths) {
+			api.openFile(path).catch((err) => showToast(t.toastOpenFailed(String(err))));
+		}
 	}
 
 	function revealSelected() {
@@ -501,12 +571,100 @@
 		api.revealInFolder(selectedHit.path).catch((err) => showToast(t.toastRevealFailed(String(err))));
 	}
 
-	function copySelectedPath() {
-		if (!selectedHit) return;
-		navigator.clipboard
-			.writeText(selectedHit.path)
-			.then(() => showToast(t.toastPathCopied))
-			.catch(() => showToast(t.toastCopyFailed));
+	function selectedPaths(): string[] {
+		return [
+			...new Set(
+				[...selectedIndices]
+					.sort((a, b) => a - b)
+					.map((index) => hits[index]?.path)
+					.filter((path): path is string => path !== undefined)
+			)
+		];
+	}
+
+	function selectOnly(i: number) {
+		selectedIndex = i;
+		selectionAnchor = i;
+		selectedIndices = new Set([i]);
+	}
+
+	function selectRange(i: number) {
+		const start = Math.min(selectionAnchor, i);
+		const end = Math.max(selectionAnchor, i);
+		selectedIndex = i;
+		selectedIndices = new Set(
+			Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
+		);
+	}
+
+	function handleResultSelect(i: number, event: MouseEvent) {
+		if (event.shiftKey) {
+			selectRange(i);
+			return;
+		}
+		if (event.ctrlKey || event.metaKey) {
+			selectedIndex = i;
+			selectionAnchor = i;
+			const next = new Set(selectedIndices);
+			if (next.has(i)) next.delete(i);
+			else next.add(i);
+			selectedIndices = next;
+			return;
+		}
+		selectOnly(i);
+	}
+
+	function openAt(i: number) {
+		const hit = hits[i];
+		if (!hit) return;
+		selectedIndex = i;
+		recordSearchHistory();
+		api.openFile(hit.path).catch((err) => showToast(t.toastOpenFailed(String(err))));
+	}
+
+	function copySelectedFiles() {
+		const paths = selectedPaths();
+		if (paths.length === 0) return;
+		api.copyFiles(paths)
+			.then(() => showToast(t.toastFilesCopied(paths.length)))
+			.catch((err) => showToast(t.toastFileOperationFailed(String(err))));
+	}
+
+	function cutSelectedFiles() {
+		const paths = selectedPaths();
+		if (paths.length === 0) return;
+		api.cutFiles(paths)
+			.then(() => showToast(t.toastFilesCut(paths.length)))
+			.catch((err) => showToast(t.toastFileOperationFailed(String(err))));
+	}
+
+	function removeDeletedPaths(paths: string[]) {
+		const deleted = new Set(paths);
+		const removedCount = hits.filter((hit) => deleted.has(hit.path)).length;
+		hits = hits.filter((hit) => !deleted.has(hit.path));
+		totalHits = Math.max(0, totalHits - removedCount);
+		selectedIndex = Math.min(selectedIndex, Math.max(0, hits.length - 1));
+		selectionAnchor = selectedIndex;
+		selectedIndices = hits.length > 0 ? new Set([selectedIndex]) : new Set();
+		showToast(t.toastFilesDeleted(removedCount));
+	}
+
+	function deleteSelectedFiles() {
+		const paths = selectedPaths();
+		if (paths.length === 0) return;
+		api.deleteFiles(paths)
+			.then(() => removeDeletedPaths(paths))
+			.catch((err) => showToast(t.toastFileOperationFailed(String(err))));
+	}
+
+	function moveResultSelection(nextIndex: number, extend: boolean, preserveSelection = false) {
+		const next = Math.max(0, Math.min(nextIndex, hits.length - 1));
+		if (preserveSelection) {
+			selectedIndex = next;
+			return;
+		}
+		if (extend) selectRange(next);
+		else selectOnly(next);
 	}
 
 	function togglePinned() {
@@ -516,15 +674,19 @@
 
 	function showContextMenu(i: number) {
 		selectedIndex = i;
-		const hit = hits[i];
-		if (!hit) return;
-		// 右键菜单的具体动作（打开/定位/复制路径）是 Rust 侧原生处理的
+		const clicked = hits[i];
+		if (!clicked) return;
+		if (!selectedIndices.has(i)) {
+			selectOnly(i);
+		}
+		const paths = selectedPaths();
+		// 右键菜单的具体动作是 Rust 侧原生处理的
 		// （context_menu.rs::handle_context_menu_event），前端拿不到"选中了
 		// 哪一项"的回调；退而在弹出菜单的这一刻记录，近似"用户对这条结果
-		// 表达了打开/定位的意图"——唯一的误差是"仅复制路径"也会计入历史，
+		// 表达了打开/定位的意图"——复制/剪切等上下文菜单动作也会计入历史，
 		// 可接受（历史本身就是去重+faint 展示，不是精确审计）。
 		recordSearchHistory();
-		api.showResultContextMenu(hit.path).catch((err) => console.error('showResultContextMenu failed', err));
+		api.showResultContextMenu(paths, clicked.path).catch((err) => console.error('showResultContextMenu failed', err));
 	}
 
 	/// 历史条目被选中（Enter 或鼠标点击）：填入查询词并让已有的搜索 $effect
@@ -680,7 +842,7 @@
 			if (hits.length > 0 && selectedIndex === hits.length - 1 && pageIndex + 1 < totalPages) {
 				goToPage(pageIndex + 1);
 			} else if (hits.length > 0) {
-				selectedIndex = Math.min(selectedIndex + 1, hits.length - 1);
+				moveResultSelection(selectedIndex + 1, e.shiftKey, e.ctrlKey && !e.shiftKey);
 			}
 			return;
 		}
@@ -689,7 +851,7 @@
 			if (hits.length > 0 && selectedIndex === 0 && pageIndex > 0) {
 				goToPage(pageIndex - 1, 'last');
 			} else if (hits.length > 0) {
-				selectedIndex = Math.max(selectedIndex - 1, 0);
+				moveResultSelection(selectedIndex - 1, e.shiftKey, e.ctrlKey && !e.shiftKey);
 			}
 			return;
 		}
@@ -698,16 +860,6 @@
 			if (e.ctrlKey) revealSelected();
 			else openSelected();
 			return;
-		}
-		if (e.key.toLowerCase() === 'c' && e.ctrlKey) {
-			// 输入框里有正在编辑的文本选区时，让浏览器按正常复制处理，
-			// 不要抢用户的编辑操作。
-			const hasTextSelection =
-				inputEl && inputEl.selectionStart !== null && inputEl.selectionStart !== inputEl.selectionEnd;
-			if (!hasTextSelection && selectedHit) {
-				e.preventDefault();
-				copySelectedPath();
-			}
 		}
 	}
 
@@ -885,6 +1037,9 @@
 			reportShownPerf();
 		});
 		const unlistenOpenSettings = listen('dowse://open-settings', openSettingsPanel);
+		const unlistenFilesDeleted = listen<string[]>('dowse://files-deleted', (evt) => {
+			removeDeletedPaths(evt.payload);
+		});
 		const unlistenRebuildDone = listen<number>('dowse://rebuild-done', (evt) => {
 			refreshIndexStatus();
 			// 托盘触发的重建（"重建索引"/"更改索引文件夹…"）没有走本地的
@@ -929,6 +1084,7 @@
 			document.removeEventListener('click', handleDocumentClick);
 			unlistenShown.then((f) => f());
 			unlistenOpenSettings.then((f) => f());
+			unlistenFilesDeleted.then((f) => f());
 			unlistenRebuildDone.then((f) => f());
 			unlistenRebuildError.then((f) => f());
 			unlistenRootRemoved.then((f) => f());
@@ -1070,11 +1226,10 @@
 				<ResultList
 					{hits}
 					{selectedIndex}
+					{selectedIndices}
 					onhover={(i) => (selectedIndex = i)}
-					onselect={(i) => {
-						selectedIndex = i;
-						openSelected();
-					}}
+					onselect={handleResultSelect}
+					onopen={openAt}
 					oncontextmenu={showContextMenu}
 				/>
 			</div>
@@ -1107,7 +1262,7 @@
 		<IndexingStrip processed={indexingOcrProcessed} total={indexingOcrTotal} />
 	{/if}
 
-	<ShortcutBar hasSelection={selectedHit !== null} />
+	<ShortcutBar hasSelection={selectedIndices.size > 0} />
 
 	{#if toast}
 		<div class="toast">{toast}</div>

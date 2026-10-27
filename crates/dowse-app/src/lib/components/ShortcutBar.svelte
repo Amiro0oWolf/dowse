@@ -19,7 +19,13 @@
 
 	<span class="hint dim"><kbd>Esc</kbd> {t.scHide}</span>
 	<span class="hint" class:dim={!hasSelection}>
-		<kbd>Ctrl</kbd><kbd>C</kbd> {t.scCopyPath}
+		<kbd>Ctrl</kbd><kbd>C</kbd> {t.scCopyFiles}
+	</span>
+	<span class="hint" class:dim={!hasSelection}>
+		<kbd>Ctrl</kbd><kbd>X</kbd> {t.scCutFiles}
+	</span>
+	<span class="hint" class:dim={!hasSelection}>
+		<kbd>Del</kbd> {t.scDeleteFiles}
 	</span>
 	<span class="hint" class:dim={!hasSelection}>
 		<kbd>Ctrl</kbd><kbd>↵</kbd> {t.scReveal}

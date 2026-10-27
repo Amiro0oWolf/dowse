@@ -225,6 +225,274 @@ pub fn reveal_in_folder(_path: String) -> Result<(), String> {
     Err("目前只支持 Windows".to_string())
 }
 
+fn checked_file_paths(paths: Vec<String>) -> Result<Vec<PathBuf>, String> {
+    if paths.is_empty() {
+        return Err("没有选择文件".to_string());
+    }
+
+    let mut unique = std::collections::HashSet::new();
+    paths
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|path| unique.insert(path.clone()))
+        .map(|path| {
+            if !path.is_file() {
+                return Err(format!("文件不存在或不是文件：{}", path.display()));
+            }
+            Ok(path)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+mod windows_file_ops {
+    use std::ffi::c_void;
+    use std::io;
+    use std::mem::size_of;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+    use std::ptr;
+
+    const CF_HDROP: u32 = 15;
+    const GMEM_MOVEABLE: u32 = 0x0002;
+    const FO_DELETE: u32 = 3;
+    const FOF_ALLOWUNDO: u16 = 0x0040;
+
+    #[repr(C)]
+    struct DropFiles {
+        p_files: u32,
+        point_x: i32,
+        point_y: i32,
+        non_client: i32,
+        wide: i32,
+    }
+
+    #[repr(C)]
+    struct FileOperationW {
+        hwnd: *mut c_void,
+        function: u32,
+        from: *const u16,
+        to: *const u16,
+        flags: u16,
+        aborted: i32,
+        name_mappings: *mut c_void,
+        progress_title: *const u16,
+    }
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn OpenClipboard(owner: *mut c_void) -> i32;
+        fn EmptyClipboard() -> i32;
+        fn SetClipboardData(format: u32, memory: *mut c_void) -> *mut c_void;
+        fn CloseClipboard() -> i32;
+        fn RegisterClipboardFormatW(format: *const u16) -> u32;
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GlobalAlloc(flags: u32, bytes: usize) -> *mut c_void;
+        fn GlobalLock(memory: *mut c_void) -> *mut c_void;
+        fn GlobalUnlock(memory: *mut c_void) -> i32;
+        fn GlobalFree(memory: *mut c_void) -> *mut c_void;
+    }
+
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHFileOperationW(operation: *mut FileOperationW) -> i32;
+    }
+
+    fn alloc_global(bytes: &[u8]) -> Result<*mut c_void, String> {
+        unsafe {
+            let memory = GlobalAlloc(GMEM_MOVEABLE, bytes.len());
+            if memory.is_null() {
+                return Err(io::Error::last_os_error().to_string());
+            }
+            let destination = GlobalLock(memory);
+            if destination.is_null() {
+                GlobalFree(memory);
+                return Err(io::Error::last_os_error().to_string());
+            }
+            ptr::copy_nonoverlapping(bytes.as_ptr(), destination.cast::<u8>(), bytes.len());
+            GlobalUnlock(memory);
+            Ok(memory)
+        }
+    }
+
+    fn free_global(memory: *mut c_void) {
+        if !memory.is_null() {
+            unsafe {
+                GlobalFree(memory);
+            }
+        }
+    }
+
+    pub fn set_file_clipboard(
+        paths: &[impl AsRef<Path>],
+        cut: bool,
+        owner: *mut c_void,
+    ) -> Result<(), String> {
+        let preferred_drop_effect: Vec<u16> = "Preferred DropEffect"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let effect_format = unsafe { RegisterClipboardFormatW(preferred_drop_effect.as_ptr()) };
+        if effect_format == 0 {
+            return Err(io::Error::last_os_error().to_string());
+        }
+
+        let mut file_list: Vec<u16> = Vec::new();
+        for path in paths {
+            file_list.extend(path.as_ref().as_os_str().encode_wide());
+            file_list.push(0);
+        }
+        file_list.push(0);
+
+        let mut file_data = vec![0; size_of::<DropFiles>() + file_list.len() * size_of::<u16>()];
+        let header = DropFiles {
+            p_files: size_of::<DropFiles>() as u32,
+            point_x: 0,
+            point_y: 0,
+            non_client: 0,
+            wide: 1,
+        };
+        unsafe {
+            ptr::write_unaligned(file_data.as_mut_ptr().cast::<DropFiles>(), header);
+            ptr::copy_nonoverlapping(
+                file_list.as_ptr().cast::<u8>(),
+                file_data.as_mut_ptr().add(size_of::<DropFiles>()),
+                file_list.len() * size_of::<u16>(),
+            );
+        }
+
+        let file_memory = alloc_global(&file_data)?;
+        let effect = if cut { 2u32 } else { 1u32 };
+        let effect_memory = match alloc_global(&effect.to_le_bytes()) {
+            Ok(memory) => memory,
+            Err(error) => {
+                free_global(file_memory);
+                return Err(error);
+            }
+        };
+
+        unsafe {
+            if OpenClipboard(owner) == 0 {
+                free_global(file_memory);
+                free_global(effect_memory);
+                return Err(io::Error::last_os_error().to_string());
+            }
+        }
+
+        let mut file_transferred = false;
+        let mut effect_transferred = false;
+        let result = unsafe {
+            if EmptyClipboard() == 0 {
+                Err(io::Error::last_os_error().to_string())
+            } else if SetClipboardData(CF_HDROP, file_memory).is_null() {
+                Err(io::Error::last_os_error().to_string())
+            } else {
+                file_transferred = true;
+                if SetClipboardData(effect_format, effect_memory).is_null() {
+                    let error = io::Error::last_os_error().to_string();
+                    EmptyClipboard();
+                    Err(error)
+                } else {
+                    effect_transferred = true;
+                    Ok(())
+                }
+            }
+        };
+        unsafe {
+            CloseClipboard();
+        }
+        if !file_transferred {
+            free_global(file_memory);
+        }
+        if !effect_transferred {
+            free_global(effect_memory);
+        }
+        result
+    }
+
+    pub fn delete_to_recycle_bin(
+        paths: &[impl AsRef<Path>],
+        owner: *mut c_void,
+    ) -> Result<(), String> {
+        let mut from = Vec::new();
+        for path in paths {
+            from.extend(path.as_ref().as_os_str().encode_wide());
+            from.push(0);
+        }
+        from.push(0);
+
+        let mut operation = FileOperationW {
+            hwnd: owner,
+            function: FO_DELETE,
+            from: from.as_ptr(),
+            to: ptr::null(),
+            flags: FOF_ALLOWUNDO,
+            aborted: 0,
+            name_mappings: ptr::null_mut(),
+            progress_title: ptr::null(),
+        };
+        let result = unsafe { SHFileOperationW(&mut operation) };
+        if result != 0 {
+            return Err(io::Error::from_raw_os_error(result).to_string());
+        }
+        if operation.aborted != 0 {
+            return Err("文件删除已取消".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn copy_files(window: tauri::WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    let paths = checked_file_paths(paths)?;
+    #[cfg(target_os = "windows")]
+    {
+        let owner = window.hwnd().map_err(|error| error.to_string())?.0;
+        windows_file_ops::set_file_clipboard(&paths, false, owner)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        let _ = paths;
+        Err("目前只支持 Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn cut_files(window: tauri::WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    let paths = checked_file_paths(paths)?;
+    #[cfg(target_os = "windows")]
+    {
+        let owner = window.hwnd().map_err(|error| error.to_string())?.0;
+        windows_file_ops::set_file_clipboard(&paths, true, owner)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        let _ = paths;
+        Err("目前只支持 Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn delete_files(window: tauri::WebviewWindow, paths: Vec<String>) -> Result<(), String> {
+    let paths = checked_file_paths(paths)?;
+    #[cfg(target_os = "windows")]
+    {
+        let owner = window.hwnd().map_err(|error| error.to_string())?.0;
+        windows_file_ops::delete_to_recycle_bin(&paths, owner)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        let _ = paths;
+        Err("目前只支持 Windows".to_string())
+    }
+}
+
 /// 全量重建索引。目标目录来自前端的目录选择器（或托盘"重建索引"/"更改索引
 /// 文件夹…"复用/新选的目录）。实际工作全部在 `rebuild::perform_rebuild`
 /// 里——浮窗按钮、托盘两个菜单项三个入口共用同一份实现，行为保证一致。

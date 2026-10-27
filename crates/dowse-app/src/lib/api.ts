@@ -73,11 +73,24 @@ export function setPinned(pinned: boolean): Promise<void> {
 	return invoke('set_pinned', { pinned });
 }
 
-/// 结果行右键：在给定路径上弹出 Win32 原生上下文菜单（打开/打开所在
-/// 文件夹/复制路径/复制文件名），菜单本身由 Rust 侧构造和处理，这里只是
-/// 触发弹出，不需要等待用户选了哪一项。
-export function showResultContextMenu(path: string): Promise<void> {
-	return invoke('show_result_context_menu', { path });
+/// 结果行右键：在给定选择上弹出 Win32 原生上下文菜单。
+export function showResultContextMenu(paths: string[], primaryPath: string): Promise<void> {
+	return invoke('show_result_context_menu', { paths, primaryPath });
+}
+
+/// 把文件作为 CF_HDROP 文件列表放入 Windows 剪贴板。
+export function copyFiles(paths: string[]): Promise<void> {
+	return invoke('copy_files', { paths });
+}
+
+/// 把文件作为可移动的 CF_HDROP 文件列表放入 Windows 剪贴板。
+export function cutFiles(paths: string[]): Promise<void> {
+	return invoke('cut_files', { paths });
+}
+
+/// 将文件发送到 Windows 回收站。
+export function deleteFiles(paths: string[]): Promise<void> {
+	return invoke('delete_files', { paths });
 }
 
 /// 呼出延迟性能埋点：窗口 `dowse://shown` 之后确认首帧真正绘制完成（双重

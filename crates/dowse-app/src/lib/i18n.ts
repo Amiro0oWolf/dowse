@@ -45,8 +45,10 @@ interface Strings {
 	// toast
 	toastOpenFailed: (err: string) => string;
 	toastRevealFailed: (err: string) => string;
-	toastPathCopied: string;
-	toastCopyFailed: string;
+	toastFilesCopied: (count: number) => string;
+	toastFilesCut: (count: number) => string;
+	toastFilesDeleted: (count: number) => string;
+	toastFileOperationFailed: (err: string) => string;
 	toastRebuildDone: (n: number) => string;
 	toastRebuildFailed: (err: string) => string;
 	toastFolderRemoved: (n: number) => string;
@@ -76,7 +78,9 @@ interface Strings {
 	pin: string;
 	// 底部快捷键条
 	scHide: string;
-	scCopyPath: string;
+	scCopyFiles: string;
+	scCutFiles: string;
+	scDeleteFiles: string;
 	scReveal: string;
 	scOpen: string;
 	// 空态
@@ -110,7 +114,7 @@ interface Strings {
 	soNavigate: string;
 	soOpen: string;
 	soRevealFolder: string;
-	soCopyPath: string;
+	soCopyFiles: string;
 	soFilterType: string;
 	soSort: string;
 	soPin: string;
@@ -181,8 +185,10 @@ const zh: Strings = {
 	dialogAddFolder: '选择要添加的文件夹',
 	toastOpenFailed: (err) => `文件打开失败：${err}`,
 	toastRevealFailed: (err) => `定位文件夹失败：${err}`,
-	toastPathCopied: '路径已复制。',
-	toastCopyFailed: '复制失败。',
+	toastFilesCopied: (count) => `已复制 ${count} 个文件。`,
+	toastFilesCut: (count) => `已剪切 ${count} 个文件。`,
+	toastFilesDeleted: (count) => `已将 ${count} 个文件移至回收站。`,
+	toastFileOperationFailed: (err) => `文件操作失败：${err}`,
 	toastRebuildDone: (n) => `索引重建完成，收录 ${n} 个文件。`,
 	toastRebuildFailed: (err) => `索引重建失败：${err}`,
 	toastFolderRemoved: (n) => `已移除该文件夹，删除 ${n} 篇文档。`,
@@ -207,7 +213,9 @@ const zh: Strings = {
 	pinUnpin: '取消固定（恢复失焦自动隐藏）',
 	pin: '固定（失焦不再自动隐藏）',
 	scHide: '隐藏',
-	scCopyPath: '复制路径',
+	scCopyFiles: '复制文件',
+	scCutFiles: '剪切文件',
+	scDeleteFiles: '删除文件',
 	scReveal: '打开所在文件夹',
 	scOpen: '打开',
 	esTypeToSearch: '键入即搜。',
@@ -236,7 +244,7 @@ const zh: Strings = {
 	soNavigate: '导航',
 	soOpen: '打开',
 	soRevealFolder: '跳转文件夹',
-	soCopyPath: '复制路径',
+	soCopyFiles: '复制文件',
 	soFilterType: '筛选类型',
 	soSort: '排序',
 	soPin: '固定',
@@ -301,8 +309,10 @@ const en: Strings = {
 	dialogAddFolder: 'Choose a folder to add',
 	toastOpenFailed: (err) => `Could not open file: ${err}`,
 	toastRevealFailed: (err) => `Could not reveal folder: ${err}`,
-	toastPathCopied: 'Path copied.',
-	toastCopyFailed: 'Copy failed.',
+	toastFilesCopied: (count) => `Copied ${count} file${count === 1 ? '' : 's'}.`,
+	toastFilesCut: (count) => `Cut ${count} file${count === 1 ? '' : 's'}.`,
+	toastFilesDeleted: (count) => `Moved ${count} file${count === 1 ? '' : 's'} to the Recycle Bin.`,
+	toastFileOperationFailed: (err) => `File operation failed: ${err}`,
 	toastRebuildDone: (n) => `Index rebuilt. ${n} files indexed.`,
 	toastRebuildFailed: (err) => `Index rebuild failed: ${err}`,
 	toastFolderRemoved: (n) => `Folder removed. ${n} documents dropped.`,
@@ -327,7 +337,9 @@ const en: Strings = {
 	pinUnpin: 'Unpin (resume auto-hide on blur)',
 	pin: 'Pin (stop auto-hide on blur)',
 	scHide: 'Hide',
-	scCopyPath: 'Copy path',
+	scCopyFiles: 'Copy files',
+	scCutFiles: 'Cut files',
+	scDeleteFiles: 'Delete files',
 	scReveal: 'Reveal in File Explorer',
 	scOpen: 'Open',
 	esTypeToSearch: 'Type to search.',
@@ -356,7 +368,7 @@ const en: Strings = {
 	soNavigate: 'Navigate',
 	soOpen: 'Open',
 	soRevealFolder: 'Reveal folder',
-	soCopyPath: 'Copy path',
+	soCopyFiles: 'Copy files',
 	soFilterType: 'Filter type',
 	soSort: 'Sort',
 	soPin: 'Pin',
