@@ -20,8 +20,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Prepare bundled Tesseract OCR
-        run: pwsh -File crates/dowse-app/scripts/prepare-tesseract.ps1
+      - name: Verify repository Tesseract runtime
+        run: pwsh -File crates/dowse-app/scripts/verify-tesseract.ps1
 
       - name: Cache cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2

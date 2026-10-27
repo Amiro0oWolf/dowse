@@ -65,8 +65,8 @@ jobs:
       - name: Cache cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Prepare bundled Tesseract OCR
-        run: pwsh -File crates/dowse-app/scripts/prepare-tesseract.ps1
+      - name: Verify repository Tesseract runtime
+        run: pwsh -File crates/dowse-app/scripts/verify-tesseract.ps1
 
       # tauri-build 的 build.rs 要求 externalBin 声明的 sidecar 文件在编译期存在
       # (issue #13)。测试不运行 sidecar,复制 debug 产物凑数即可,免烧 release 编译时间。
