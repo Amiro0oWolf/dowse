@@ -23,9 +23,11 @@ use crate::cursor::{UsnCursor, VolumeKey};
 /// 无需额外索引属性。）
 /// v6 新增 CJK 逐字位置字段和非 CJK edge-ngram 前缀字段，把普通输入的稳定召回
 /// 与 jieba 相关性分词拆开；旧索引没有这些 autocomplete 字段，必须重建。
+/// v7 归一化波斯语/阿拉伯语常见字母变体、数字和变音符号；旧倒排词项没有这套
+/// 归一化，必须重建后才可用波斯语检索。
 /// 打开索引时版本对不上就要求重建，不做静默迁移、不做自动升级——旧字段布局
 /// 搜出来的结果不可靠，宁可让用户重建一次。
-pub(crate) const SCHEMA_VERSION: u32 = 6;
+pub(crate) const SCHEMA_VERSION: u32 = 7;
 
 /// 索引目录旁的元数据：schema 版本号 + 已注册的索引根目录列表 + 每个卷的
 /// USN 游标（里程碑 6）。

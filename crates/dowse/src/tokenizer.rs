@@ -1,6 +1,5 @@
-//! 内容分词器：把文本按"汉字 / 非汉字"切成一段段，汉字段交给 jieba 继续
-//! 按中文习惯切词，非汉字段（拉丁字母、数字、标点、空白等）按字母数字连续
-//! 段切成词；两侧产出的 token 一律小写归一。
+//! 内容分词器：汉字段交给 jieba 按中文习惯切词，其他文字按字母数字连续段切词；
+//! 波斯语/阿拉伯语 token 同时归一化常见字母变体、数字和变音符号。
 //!
 //! 为什么要在 jieba 外面套这层：`tantivy_jieba` 直接把整串喂给 jieba 的
 //! 中文 HMM 统计分词，遇到英文/连字符串（如 `glimmerfrost-9931-unique-marker`）
@@ -33,6 +32,44 @@ pub(crate) fn is_cjk(ch: char) -> bool {
 /// 主相关性字段仍只有 Han 交给 jieba；日文假名和韩文不改变原有分词路径。
 fn is_jieba_han(ch: char) -> bool {
     ch.script() == Script::Han
+}
+
+pub(crate) fn is_persian_ignorable(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x0610..=0x061A
+            | 0x064B..=0x065F
+            | 0x0670
+            | 0x06D6..=0x06ED
+            | 0x08D3..=0x08FF
+            | 0x200C..=0x200D
+            | 0x0640
+    )
+}
+
+fn normalize_search_char(ch: char) -> Option<String> {
+    if is_persian_ignorable(ch) {
+        return None;
+    }
+
+    let normalized = match ch {
+        'ي' | 'ى' => 'ی',
+        'ك' => 'ک',
+        '٠'..='٩' => char::from_u32('0' as u32 + ch as u32 - '٠' as u32)?,
+        '۰'..='۹' => char::from_u32('0' as u32 + ch as u32 - '۰' as u32)?,
+        _ => ch,
+    };
+    Some(normalized.to_lowercase())
+}
+
+pub(crate) fn normalize_search_text(text: &str) -> String {
+    text.chars().filter_map(normalize_search_char).fold(
+        String::new(),
+        |mut normalized, ch| {
+            normalized.push_str(&ch);
+            normalized
+        },
+    )
 }
 
 /// 混合分词器：汉字段走 jieba，非汉字段按字母数字切，全部小写归一。
@@ -75,12 +112,14 @@ impl MixedTokenizer {
                 if span_start.is_none() {
                     span_start = Some(i);
                 }
+            } else if span_start.is_some() && is_persian_ignorable(ch) {
+                continue;
             } else if let Some(start) = span_start.take() {
                 out.push(Token {
                     offset_from: base + start,
                     offset_to: base + i,
                     position: *position,
-                    text: run[start..i].to_lowercase(),
+                    text: normalize_search_text(&run[start..i]),
                     position_length: 1,
                 });
                 *position += 1;
@@ -91,7 +130,7 @@ impl MixedTokenizer {
                 offset_from: base + start,
                 offset_to: base + run.len(),
                 position: *position,
-                text: run[start..].to_lowercase(),
+                text: normalize_search_text(&run[start..]),
                 position_length: 1,
             });
             *position += 1;
@@ -190,16 +229,22 @@ impl AutocompletePrefixTokenizer {
         tokens: &mut Vec<Token>,
     ) {
         let word = &text[offset_from..offset_to];
-        for (index, (relative, ch)) in word.char_indices().enumerate() {
-            if index >= AUTOCOMPLETE_MAX_PREFIX_CHARS {
+        let mut normalized = String::new();
+        let mut prefix_chars = 0;
+        for (relative, ch) in word.char_indices() {
+            let Some(normalized_char) = normalize_search_char(ch) else {
+                continue;
+            };
+            if prefix_chars >= AUTOCOMPLETE_MAX_PREFIX_CHARS {
                 break;
             }
-            let prefix_to = relative + ch.len_utf8();
+            normalized.push_str(&normalized_char);
+            prefix_chars += 1;
             tokens.push(Token {
                 offset_from,
-                offset_to: offset_from + prefix_to,
+                offset_to: offset_from + relative + ch.len_utf8(),
                 position,
-                text: word[..prefix_to].to_lowercase(),
+                text: normalized.clone(),
                 position_length: 1,
             });
         }
@@ -215,7 +260,9 @@ impl Tokenizer for AutocompletePrefixTokenizer {
         let mut position = 0usize;
 
         for (offset, ch) in text.char_indices() {
-            if ch.is_alphanumeric() && !is_cjk(ch) {
+            if (ch.is_alphanumeric() || (start.is_some() && is_persian_ignorable(ch)))
+                && !is_cjk(ch)
+            {
                 start.get_or_insert(offset);
             } else if let Some(offset_from) = start.take() {
                 Self::emit_prefixes(text, offset_from, offset, position, &mut tokens);
@@ -418,6 +465,47 @@ mod tests {
         );
         assert!(tokens[..9].iter().all(|token| token.position == 0));
         assert!(tokens[9..].iter().all(|token| token.position == 1));
+    }
+
+    #[test]
+    fn persian_token_normalization_maps_arabic_letters_digits_and_marks() {
+        let tokens = collect("كِتاب يک ۱۲۳ ١٢٣ می‌روم");
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| token.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["کتاب", "یک", "123", "123", "میروم"]
+        );
+    }
+
+    #[test]
+    fn persian_normalized_tokens_keep_original_byte_offsets() {
+        let text = "كِتاب فارسی";
+        let tokens = collect(text);
+        assert_eq!(tokens[0].text, "کتاب");
+        assert_eq!(&text[tokens[0].offset_from..tokens[0].offset_to], "كِتاب");
+        assert_eq!(tokens[1].text, "فارسی");
+        assert_eq!(&text[tokens[1].offset_from..tokens[1].offset_to], "فارسی");
+    }
+
+    #[test]
+    fn persian_autocomplete_prefixes_use_normalized_terms_and_original_offsets() {
+        let text = "كِتاب";
+        let mut tokenizer = AutocompletePrefixTokenizer;
+        let mut stream = tokenizer.token_stream(text);
+        let mut tokens = Vec::new();
+        while stream.advance() {
+            tokens.push(stream.token().clone());
+        }
+        assert_eq!(
+            tokens.iter().map(|token| token.text.as_str()).collect::<Vec<_>>(),
+            vec!["ک", "کت", "کتا", "کتاب"]
+        );
+        assert_eq!(
+            &text[tokens.last().unwrap().offset_from..tokens.last().unwrap().offset_to],
+            text
+        );
     }
 
     #[test]

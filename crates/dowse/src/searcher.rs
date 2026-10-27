@@ -34,9 +34,12 @@ enum TypeaheadPart {
 /// 这份结构只定义召回集合，jieba 稍后只能作为 Should 加分，不能新增命中。
 fn plain_typeahead_parts(query: &str) -> Option<Vec<TypeaheadPart>> {
     if query.trim().is_empty()
-        || !query
-            .chars()
-            .all(|ch| ch.is_alphanumeric() || ch.is_whitespace() || matches!(ch, '-' | '_' | '.'))
+        || !query.chars().all(|ch| {
+            ch.is_alphanumeric()
+                || ch.is_whitespace()
+                || crate::tokenizer::is_persian_ignorable(ch)
+                || matches!(ch, '-' | '_' | '.')
+        })
     {
         return None;
     }
@@ -60,7 +63,9 @@ fn plain_typeahead_parts(query: &str) -> Option<Vec<TypeaheadPart>> {
             Some(Kind::Cjk) => parts.push(TypeaheadPart::Cjk(
                 value.chars().map(String::from).collect(),
             )),
-            Some(Kind::Word) => parts.push(TypeaheadPart::Word(value.to_lowercase())),
+            Some(Kind::Word) => parts.push(TypeaheadPart::Word(
+                crate::tokenizer::normalize_search_text(&value),
+            )),
             None => {}
         }
     };
@@ -68,7 +73,9 @@ fn plain_typeahead_parts(query: &str) -> Option<Vec<TypeaheadPart>> {
     for ch in query.trim().chars() {
         let next = if crate::tokenizer::is_cjk(ch) {
             Some(Kind::Cjk)
-        } else if ch.is_alphanumeric() {
+        } else if ch.is_alphanumeric()
+            || (kind == Some(Kind::Word) && crate::tokenizer::is_persian_ignorable(ch))
+        {
             Some(Kind::Word)
         } else {
             None
@@ -1175,6 +1182,44 @@ mod tests {
                 hits[0].path
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn search_persian_normalizes_arabic_variants_and_combining_marks() -> Result<()> {
+        let index_dir = tempfile::tempdir()?;
+        let target_dir = tempfile::Builder::new().prefix("dowse-test-").tempdir()?;
+
+        std::fs::write(
+            target_dir.path().join("کتاب-فارسی.md"),
+            "در این نوشته كِتاب فارسی دربارهٔ سال ۱۲۳ است.",
+        )?;
+        std::fs::write(target_dir.path().join("english.md"), "A book in Persian")?;
+
+        crate::rebuild_index(index_dir.path(), target_dir.path())?;
+        let searcher = Searcher::open(index_dir.path())?;
+
+        for query in ["فارسی", "کت", "كِتاب", "۱۲۳"] {
+            let hits = searcher.search(query, 10)?;
+            assert!(
+                hits.iter().any(|hit| hit.path.ends_with("کتاب-فارسی.md")),
+                "عبارت فارسی {query:?} باید از محتوا یا نام فایل نتیجه بدهد: {:?}",
+                hits.iter().map(|hit| &hit.path).collect::<Vec<_>>()
+            );
+        }
+
+        let hits = searcher.search("کتاب", 10)?;
+        let hit = hits
+            .iter()
+            .find(|hit| hit.path.ends_with("کتاب-فارسی.md"))
+            .expect("نام فایل باید با املای فارسی به نتیجه برسد");
+        assert!(
+            hit.highlighted
+                .iter()
+                .any(|range| &hit.snippet[range.clone()] == "كِتاب"),
+            "هایلایت باید به offsetهای متن اصلی برگردد: {:?}",
+            hit.highlighted
+        );
         Ok(())
     }
 
