@@ -161,15 +161,17 @@ pub fn run() {
             #[cfg(windows)]
             match app
                 .path()
-                .resolve("resources/tesseract", tauri::path::BaseDirectory::Resource)
+                .resolve("tesseract", tauri::path::BaseDirectory::Resource)
             {
                 Ok(resource_dir) => {
                     logging::log_line(
                         "ocr",
                         &format!(
-                            "Tesseract bundled resource path: {} (executable present: {})",
+                            "Tesseract bundled resource path: {} (executable: {}, English model: {}, Persian model: {})",
                             resource_dir.display(),
-                            resource_dir.join("tesseract.exe").is_file()
+                            resource_dir.join("tesseract.exe").is_file(),
+                            resource_dir.join("tessdata").join("eng.traineddata").is_file(),
+                            resource_dir.join("tessdata").join("fas.traineddata").is_file()
                         ),
                     );
                     if let Err(error) = dowse::set_ocr_resource_dir(resource_dir) {
