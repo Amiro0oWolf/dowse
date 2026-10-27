@@ -159,11 +159,20 @@ pub fn run() {
                 .expect("tauri.conf.json 里定义的 main 窗口应该存在");
 
             #[cfg(windows)]
-            match app.path().resource_dir() {
+            match app
+                .path()
+                .resolve("resources/tesseract", tauri::path::BaseDirectory::Resource)
+            {
                 Ok(resource_dir) => {
-                    if let Err(error) = dowse::set_ocr_resource_dir(
-                        resource_dir.join("resources").join("tesseract"),
-                    ) {
+                    logging::log_line(
+                        "ocr",
+                        &format!(
+                            "Tesseract bundled resource path: {} (executable present: {})",
+                            resource_dir.display(),
+                            resource_dir.join("tesseract.exe").is_file()
+                        ),
+                    );
+                    if let Err(error) = dowse::set_ocr_resource_dir(resource_dir) {
                         logging::log_line("ocr", &format!("配置 Tesseract 资源目录失败: {error}"));
                     }
                 }

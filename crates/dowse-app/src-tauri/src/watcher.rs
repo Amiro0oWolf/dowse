@@ -97,17 +97,22 @@ fn watch_thread(app: AppHandle, index_dir: PathBuf, roots: Vec<PathBuf>, stop: A
     // 常驻程序不赶时间：图片交给独立的后台 worker 池慢慢消化，跟文本监听并行
     // 跑、互不阻塞。没有可用语言包时返回 None，只打一行日志，不影响文本监听。
     let ocr_app = app.clone();
+    let ocr_pending = dowse::OcrQueue::for_index_dir(&index_dir).pending_len();
     let ocr_pipeline = OcrPipeline::start(
         updater.clone(),
         index_dir.clone(),
         DEFAULT_WORKERS,
         move |pending| report_ocr_progress(&ocr_app, pending),
     );
-    if ocr_pipeline.is_none() {
+    if ocr_pipeline.is_some() {
         crate::logging::log_line(
             "ocr",
-            "未检测到 Tesseract OCR 引擎或英语/波斯语模型，OCR 管线已停用",
+            &format!("OCR worker 池已启动: workers={DEFAULT_WORKERS}, pending={ocr_pending}"),
         );
+    } else {
+        let reason =
+            dowse::ocr_availability_error().unwrap_or_else(|| "OCR worker 初始化失败".to_string());
+        crate::logging::log_line("ocr", &format!("OCR worker 池未启动: {reason}"));
     }
 
     // 挂实时监听，阻塞到 stop 置位。提交后 Searcher 的 reader 自动重载，

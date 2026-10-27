@@ -96,24 +96,59 @@ mod engine_impl {
             .map_err(|_| anyhow::anyhow!("Tesseract resource directory is already configured"))
     }
 
-    pub fn is_available() -> bool {
+    pub fn availability_error() -> Option<String> {
         let Some((executable, tessdata)) = find_installation() else {
-            return false;
+            return Some(
+                "bundled Tesseract executable and English/Persian models were not found"
+                    .to_string(),
+            );
         };
-        let Ok(output) = tesseract_command(&executable)
+        let output = match tesseract_command(&executable)
             .arg("--list-langs")
             .arg("--tessdata-dir")
-            .arg(tessdata)
+            .arg(&tessdata)
             .output()
-        else {
-            return false;
+        {
+            Ok(output) => output,
+            Err(error) => {
+                return Some(format!(
+                    "could not start Tesseract at {}: {error}",
+                    executable.display()
+                ));
+            }
         };
-        output.status.success() && {
-            let languages = String::from_utf8_lossy(&output.stdout);
-            ["eng", "fas"]
-                .iter()
-                .all(|required| languages.lines().any(|line| line.trim() == *required))
+        if !output.status.success() {
+            return Some(format!(
+                "Tesseract at {} could not load models from {}: {}",
+                executable.display(),
+                tessdata.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        };
+        let languages = String::from_utf8_lossy(&output.stdout);
+        let missing: Vec<_> = ["eng", "fas"]
+            .into_iter()
+            .filter(|required| !languages.lines().any(|line| line.trim() == *required))
+            .collect();
+        if missing.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "Tesseract at {} is missing required language model(s): {} (loaded: {})",
+                executable.display(),
+                missing.join(", "),
+                languages
+                    .lines()
+                    .skip(1)
+                    .map(str::trim)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
         }
+    }
+
+    pub fn is_available() -> bool {
+        availability_error().is_none()
     }
 
     fn find_installation() -> Option<(PathBuf, PathBuf)> {
@@ -220,7 +255,10 @@ mod engine_impl {
         let combined = recognize_with_language(engine, path, "eng+fas")?;
         // The mixed model can read Persian words as Latin; keep the extra pass limited to
         // images where it detected Arabic script so ordinary English OCR stays one pass.
-        if combined.chars().any(|ch| matches!(ch as u32, 0x0600..=0x06FF)) {
+        if combined
+            .chars()
+            .any(|ch| matches!(ch as u32, 0x0600..=0x06FF))
+        {
             let persian = recognize_with_language(engine, path, "fas")?;
             if !persian.trim().is_empty() {
                 return Ok(format!("{combined}\n{persian}"));
@@ -262,6 +300,11 @@ mod engine_impl {
 /// 检查 Tesseract 与内置英语、波斯语模型是否可用。
 pub fn is_available() -> bool {
     engine_impl::is_available()
+}
+
+/// Return the reason bundled OCR is unavailable, or `None` when both required models load.
+pub fn availability_error() -> Option<String> {
+    engine_impl::availability_error()
 }
 
 pub use engine_impl::set_resource_dir;

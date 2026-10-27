@@ -63,10 +63,8 @@ impl OcrPipeline {
         worker_count: usize,
         on_progress: impl Fn(usize) + Send + Sync + 'static,
     ) -> Option<Self> {
-        if !ocr::is_available() {
-            eprintln!(
-                "未检测到打包的 Tesseract OCR 引擎或英语/波斯语模型，OCR 管线已停用（截图/图片文字不会被索引）"
-            );
+        if let Some(error) = ocr::availability_error() {
+            eprintln!("OCR 管线未启动：{error}（截图/图片文字不会被索引）");
             return None;
         }
 

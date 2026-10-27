@@ -104,6 +104,7 @@ pub use indexer::{
     IndexProgress, IndexStats, rebuild_index, rebuild_index_with_progress, remove_dir_all_retrying,
 };
 pub use meta::registered_roots;
+pub use ocr::availability_error as ocr_availability_error;
 pub use ocr::is_available;
 pub use ocr::set_resource_dir as set_ocr_resource_dir;
 pub use ocr_queue::OcrQueue;
