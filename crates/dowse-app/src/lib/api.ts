@@ -88,6 +88,10 @@ export function ocrAvailable(): Promise<boolean> {
 	return invoke('ocr_available');
 }
 
+export function openTesseractFolder(): Promise<void> {
+	return invoke('open_tesseract_folder');
+}
+
 /// 结果行右键：在给定选择上弹出 Win32 原生上下文菜单。
 export function showResultContextMenu(paths: string[], primaryPath: string): Promise<void> {
 	return invoke('show_result_context_menu', { paths, primaryPath });

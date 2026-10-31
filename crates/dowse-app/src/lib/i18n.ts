@@ -83,6 +83,8 @@ interface Strings {
 	ocrTitle: string;
 	ocrAvailable: string;
 	ocrMissing: string;
+	ocrLocateFolder: string;
+	ocrFolderOpenFailed: string;
 	themeDark: string;
 	themeLight: string;
 	resultsPerPage: string;
@@ -229,6 +231,8 @@ const zh: Strings = {
 	ocrTitle: '图片文字识别',
 	ocrAvailable: '已就绪（内置英语和波斯语 OCR）。',
 	ocrMissing: '内置 OCR 引擎或语言模型缺失；图片文字无法识别。',
+	ocrLocateFolder: '打开 Tesseract 文件夹',
+	ocrFolderOpenFailed: '无法打开 Tesseract 文件夹。',
 	themeDark: '切换到深色模式',
 	themeLight: '切换到浅色模式',
 	resultsPerPage: '每页结果数',
@@ -365,6 +369,8 @@ const en: Strings = {
 	ocrTitle: 'Image text recognition',
 	ocrAvailable: 'Ready (English and Persian OCR are bundled).',
 	ocrMissing: 'The bundled OCR engine or language models are missing; image text cannot be recognized.',
+	ocrLocateFolder: 'Open Tesseract folder',
+	ocrFolderOpenFailed: 'Could not open the Tesseract folder.',
 	themeDark: 'Switch to dark mode',
 	themeLight: 'Switch to light mode',
 	resultsPerPage: 'Results per page',

@@ -53,6 +53,7 @@
 	let lang = $state<LangOption>('auto');
 	let langChanged = $state(false); // 改过语言 → 显示"重启后生效"
 	let ocrAvailable = $state<boolean | null>(null);
+	let ocrFolderError = $state('');
 
 	// ── 改键捕获态 ──────────────────────────────────────────────────────────
 	let capturing = $state(false); // 正在等用户按下新组合键
@@ -112,6 +113,16 @@
 		excludeDirsText = rules.exclude_dirs.join('\n');
 		extraExtsText = rules.extra_text_exts.join(', ');
 		maxFileMbText = String(rules.max_file_mb);
+	}
+
+	async function openTesseractFolder() {
+		ocrFolderError = '';
+		try {
+			await api.openTesseractFolder();
+		} catch (error) {
+			console.error('openTesseractFolder failed', error);
+			ocrFolderError = `${t.ocrFolderOpenFailed} ${String(error)}`;
+		}
 	}
 
 	async function save(): Promise<boolean> {
@@ -463,6 +474,12 @@
 						{t.ocrMissing}
 					{/if}
 				</p>
+				<button type="button" class="mini-btn" onclick={openTesseractFolder}>
+					{t.ocrLocateFolder}
+				</button>
+				{#if ocrFolderError}
+					<p class="field-hint restart" role="alert">{ocrFolderError}</p>
+				{/if}
 			</div>
 		{:else}
 			<!-- 索引规则（原三项原样迁入，保留 保存/立即重建 逻辑） -->

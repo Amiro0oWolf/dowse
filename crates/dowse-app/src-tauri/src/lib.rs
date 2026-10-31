@@ -138,6 +138,7 @@ pub fn run() {
             commands::toggle_maximize,
             commands::exit_app,
             commands::ocr_available,
+            commands::open_tesseract_folder,
             commands::hide_window,
             commands::report_shown_perf,
             commands::report_search_perf,

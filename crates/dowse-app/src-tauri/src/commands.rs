@@ -633,6 +633,23 @@ pub fn ocr_available() -> bool {
     dowse::is_available()
 }
 
+#[tauri::command]
+pub fn open_tesseract_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let path = app
+        .path()
+        .resolve("tesseract", tauri::path::BaseDirectory::Resource)
+        .map_err(|error| format!("Could not locate the bundled Tesseract folder: {error}"))?;
+    if !path.is_dir() {
+        return Err(format!(
+            "The bundled Tesseract folder does not exist: {}",
+            path.display()
+        ));
+    }
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|error| format!("Could not open the Tesseract folder: {error}"))
+}
+
 /// 索引规则面板的读取入口：取当前索引目录旁 rules.json 里的规则（没配过就
 /// 是逐字节等于老硬编码行为的默认值，见 `dowse::rules` 模块文档）。面板
 /// Ctrl+, 打开时调一次拿表单初值。索引目录跟 `rebuild_index`/`add_root`
