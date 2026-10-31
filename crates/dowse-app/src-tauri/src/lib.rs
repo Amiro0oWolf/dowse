@@ -138,7 +138,7 @@ pub fn run() {
             commands::toggle_maximize,
             commands::exit_app,
             commands::ocr_available,
-            commands::open_tesseract_folder,
+            commands::set_tesseract_folder,
             commands::hide_window,
             commands::report_shown_perf,
             commands::report_search_perf,
@@ -181,6 +181,19 @@ pub fn run() {
                 }
                 Err(error) => {
                     logging::log_line("ocr", &format!("定位应用资源目录失败: {error}"));
+                }
+            }
+
+            #[cfg(windows)]
+            if let Some(directory) = app.state::<ConfigState>().get().ocr_dir {
+                if let Err(error) = dowse::set_ocr_resource_dir(directory.clone()) {
+                    logging::log_line(
+                        "ocr",
+                        &format!(
+                            "保存的 Tesseract 文件夹不可用 ({}): {error}",
+                            directory.display()
+                        ),
+                    );
                 }
             }
 

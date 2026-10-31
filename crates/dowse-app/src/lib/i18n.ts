@@ -84,7 +84,8 @@ interface Strings {
 	ocrAvailable: string;
 	ocrMissing: string;
 	ocrLocateFolder: string;
-	ocrFolderOpenFailed: string;
+	ocrFolderHint: string;
+	ocrFolderSelectFailed: string;
 	themeDark: string;
 	themeLight: string;
 	resultsPerPage: string;
@@ -229,10 +230,11 @@ const zh: Strings = {
 	windowRestore: '还原',
 	windowExit: '退出',
 	ocrTitle: '图片文字识别',
-	ocrAvailable: '已就绪（内置英语和波斯语 OCR）。',
-	ocrMissing: '内置 OCR 引擎或语言模型缺失；图片文字无法识别。',
-	ocrLocateFolder: '打开 Tesseract 文件夹',
-	ocrFolderOpenFailed: '无法打开 Tesseract 文件夹。',
+	ocrAvailable: '英语和波斯语 OCR 已就绪。',
+	ocrMissing: '未找到可用的 Tesseract 引擎或英语/波斯语模型。请选择 Tesseract 文件夹。',
+	ocrLocateFolder: '选择电脑上的 Tesseract 文件夹',
+	ocrFolderHint: '选择包含 tesseract.exe 和 tessdata 子文件夹（含 eng/fas 模型）的文件夹。',
+	ocrFolderSelectFailed: '无法使用此 Tesseract 文件夹：',
 	themeDark: '切换到深色模式',
 	themeLight: '切换到浅色模式',
 	resultsPerPage: '每页结果数',
@@ -367,10 +369,11 @@ const en: Strings = {
 	windowRestore: 'Restore',
 	windowExit: 'Exit',
 	ocrTitle: 'Image text recognition',
-	ocrAvailable: 'Ready (English and Persian OCR are bundled).',
-	ocrMissing: 'The bundled OCR engine or language models are missing; image text cannot be recognized.',
-	ocrLocateFolder: 'Open Tesseract folder',
-	ocrFolderOpenFailed: 'Could not open the Tesseract folder.',
+	ocrAvailable: 'English and Persian OCR are ready.',
+	ocrMissing: 'No usable Tesseract engine or English/Persian models found. Locate your Tesseract folder.',
+	ocrLocateFolder: 'Locate existing Tesseract folder',
+	ocrFolderHint: 'Choose the folder containing tesseract.exe and a tessdata folder with the eng and fas models.',
+	ocrFolderSelectFailed: 'Could not use this Tesseract folder:',
 	themeDark: 'Switch to dark mode',
 	themeLight: 'Switch to light mode',
 	resultsPerPage: 'Results per page',

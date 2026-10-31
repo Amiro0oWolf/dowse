@@ -1,7 +1,7 @@
 //! 图片文件判定（[`is_image`]）、OCR 原始输出清洗（[`clean_cjk_spaces`]/
 //! [`dual_form_content`]），以及 Tesseract 执行和资源发现逻辑。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 支持 OCR 的图片扩展名（不含点，小写）。见设计文档第三节"索引侧变化"。
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp"];
@@ -71,9 +71,13 @@ pub(crate) fn dual_form_content(raw: &str) -> String {
 mod engine_impl {
     use std::path::{Path, PathBuf};
     use std::process::Command;
-    use std::sync::OnceLock;
+    use std::sync::{OnceLock, RwLock};
 
-    static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
+    static RESOURCE_DIRS: OnceLock<RwLock<Vec<PathBuf>>> = OnceLock::new();
+
+    fn resource_dirs() -> &'static RwLock<Vec<PathBuf>> {
+        RESOURCE_DIRS.get_or_init(|| RwLock::new(Vec::new()))
+    }
 
     fn tesseract_command(executable: &Path) -> Command {
         let mut command = Command::new(executable);
@@ -89,11 +93,67 @@ mod engine_impl {
         command
     }
 
-    /// Configure the bundled OCR resource directory before starting worker threads.
+    fn normalized_resource_dir(path: PathBuf) -> PathBuf {
+        if path.file_name().is_some_and(|name| name == "tessdata") {
+            path.parent().unwrap_or(&path).to_path_buf()
+        } else {
+            path
+        }
+    }
+
+    /// Validate a Tesseract installation and return its engine directory.
+    /// Validate a Tesseract installation and return the normalized engine directory.
+    pub fn validate_resource_dir(path: PathBuf) -> anyhow::Result<PathBuf> {
+        let directory = normalized_resource_dir(path);
+        let executable = directory.join("tesseract.exe");
+        let tessdata = directory.join("tessdata");
+        if !directory.is_dir()
+            || !executable.is_file()
+            || !tessdata.join("eng.traineddata").is_file()
+            || !tessdata.join("fas.traineddata").is_file()
+        {
+            anyhow::bail!(
+                "The selected folder must contain tesseract.exe and tessdata\\eng.traineddata and tessdata\\fas.traineddata"
+            );
+        }
+        let output = tesseract_command(&executable)
+            .arg("--list-langs")
+            .arg("--tessdata-dir")
+            .arg(&tessdata)
+            .output()
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "could not start Tesseract at {}: {error}",
+                    executable.display()
+                )
+            })?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "Tesseract at {} could not load its language models: {}",
+                executable.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let languages = String::from_utf8_lossy(&output.stdout);
+        for required in ["eng", "fas"] {
+            if !languages.lines().any(|line| line.trim() == required) {
+                anyhow::bail!(
+                    "The selected Tesseract installation is missing the {required} model"
+                );
+            }
+        }
+        Ok(directory)
+    }
+
+    /// Prioritize a validated Tesseract installation for future OCR operations.
     pub fn set_resource_dir(path: PathBuf) -> anyhow::Result<()> {
-        RESOURCE_DIR
-            .set(path)
-            .map_err(|_| anyhow::anyhow!("Tesseract resource directory is already configured"))
+        let path = validate_resource_dir(path)?;
+        let mut directories = resource_dirs()
+            .write()
+            .map_err(|_| anyhow::anyhow!("Tesseract resource directory lock poisoned"))?;
+        directories.retain(|directory| directory != &path);
+        directories.insert(0, path);
+        Ok(())
     }
 
     pub fn availability_error() -> Option<String> {
@@ -153,9 +213,13 @@ mod engine_impl {
 
     fn find_installation() -> Option<(PathBuf, PathBuf)> {
         let mut directories = Vec::new();
-        if let Some(directory) = RESOURCE_DIR.get() {
-            directories.push(directory.clone());
-        }
+        directories.extend(
+            resource_dirs()
+                .read()
+                .expect("Tesseract resource directory lock poisoned")
+                .iter()
+                .cloned(),
+        );
         if let Ok(executable) = std::env::current_exe()
             && let Some(parent) = executable.parent()
         {
@@ -251,15 +315,16 @@ mod engine_impl {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
 
-    pub fn recognize(engine: &Engine, path: &Path) -> anyhow::Result<String> {
-        let combined = recognize_with_language(engine, path, "eng+fas")?;
+    pub fn recognize(path: &Path) -> anyhow::Result<String> {
+        let engine = create_engine()?;
+        let combined = recognize_with_language(&engine, path, "eng+fas")?;
         // The mixed model can read Persian words as Latin; keep the extra pass limited to
         // images where it detected Arabic script so ordinary English OCR stays one pass.
         if combined
             .chars()
             .any(|ch| matches!(ch as u32, 0x0600..=0x06FF))
         {
-            let persian = recognize_with_language(engine, path, "fas")?;
+            let persian = recognize_with_language(&engine, path, "fas")?;
             if !persian.trim().is_empty() {
                 return Ok(format!("{combined}\n{persian}"));
             }
@@ -270,6 +335,14 @@ mod engine_impl {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn selected_tessdata_folder_resolves_to_engine_directory() {
+            assert_eq!(
+                normalized_resource_dir(PathBuf::from(r"C:\Tesseract-OCR\tessdata")),
+                PathBuf::from(r"C:\Tesseract-OCR")
+            );
+        }
 
         #[test]
         fn strip_extended_prefix_removes_drive_prefix() {
@@ -307,8 +380,13 @@ pub fn availability_error() -> Option<String> {
     engine_impl::availability_error()
 }
 
+/// Validate a Tesseract installation and return its normalized engine directory.
+pub fn validate_resource_dir(path: PathBuf) -> anyhow::Result<PathBuf> {
+    engine_impl::validate_resource_dir(path)
+}
+
+pub(crate) use engine_impl::recognize;
 pub use engine_impl::set_resource_dir;
-pub(crate) use engine_impl::{create_engine, recognize};
 
 #[cfg(test)]
 mod tests {

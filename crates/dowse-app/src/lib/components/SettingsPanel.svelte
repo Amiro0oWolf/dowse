@@ -25,6 +25,7 @@
 	import type { IndexRules, LangOption } from '../types';
 	import { t, LANG_OVERRIDE_KEY } from '../i18n';
 	import { formatHotkey } from '../hotkey';
+	import { open } from '@tauri-apps/plugin-dialog';
 
 	let {
 		roots,
@@ -54,6 +55,7 @@
 	let langChanged = $state(false); // 改过语言 → 显示"重启后生效"
 	let ocrAvailable = $state<boolean | null>(null);
 	let ocrFolderError = $state('');
+	let ocrFolder = $state('');
 
 	// ── 改键捕获态 ──────────────────────────────────────────────────────────
 	let capturing = $state(false); // 正在等用户按下新组合键
@@ -115,13 +117,20 @@
 		maxFileMbText = String(rules.max_file_mb);
 	}
 
-	async function openTesseractFolder() {
+	async function selectTesseractFolder() {
 		ocrFolderError = '';
 		try {
-			await api.openTesseractFolder();
+			const selected = await open({
+				directory: true,
+				multiple: false,
+				title: t.ocrLocateFolder
+			});
+			if (selected === null) return;
+			ocrFolder = await api.setTesseractFolder(selected);
+			ocrAvailable = await api.ocrAvailable();
 		} catch (error) {
-			console.error('openTesseractFolder failed', error);
-			ocrFolderError = `${t.ocrFolderOpenFailed} ${String(error)}`;
+			console.error('selectTesseractFolder failed', error);
+			ocrFolderError = `${t.ocrFolderSelectFailed} ${String(error)}`;
 		}
 	}
 
@@ -298,6 +307,7 @@
 				hotkeyLabel = formatHotkey(cfg.hotkey);
 				autostartEnabled = cfg.autostart_enabled;
 				lang = cfg.lang;
+				ocrFolder = cfg.ocr_dir ?? '';
 			})
 			.catch(() => {
 				// 静默：通用区退回默认展示值即可。
@@ -474,9 +484,13 @@
 						{t.ocrMissing}
 					{/if}
 				</p>
-				<button type="button" class="mini-btn" onclick={openTesseractFolder}>
+				<p class="field-hint">{t.ocrFolderHint}</p>
+				<button type="button" class="mini-btn" onclick={selectTesseractFolder}>
 					{t.ocrLocateFolder}
 				</button>
+				{#if ocrFolder}
+					<p class="field-hint" dir="ltr">{ocrFolder}</p>
+				{/if}
 				{#if ocrFolderError}
 					<p class="field-hint restart" role="alert">{ocrFolderError}</p>
 				{/if}

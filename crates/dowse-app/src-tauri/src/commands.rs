@@ -634,20 +634,18 @@ pub fn ocr_available() -> bool {
 }
 
 #[tauri::command]
-pub fn open_tesseract_folder(app: tauri::AppHandle) -> Result<(), String> {
-    let path = app
-        .path()
-        .resolve("tesseract", tauri::path::BaseDirectory::Resource)
-        .map_err(|error| format!("Could not locate the bundled Tesseract folder: {error}"))?;
-    if !path.is_dir() {
-        return Err(format!(
-            "The bundled Tesseract folder does not exist: {}",
-            path.display()
-        ));
-    }
-    app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|error| format!("Could not open the Tesseract folder: {error}"))
+pub fn set_tesseract_folder(app: tauri::AppHandle, directory: String) -> Result<String, String> {
+    let path = dowse::validate_ocr_resource_dir(PathBuf::from(directory))
+        .map_err(|error| error.to_string())?;
+    app.state::<ConfigState>()
+        .set_ocr_dir(path.clone())
+        .map_err(|error| format!("Tesseract folder was not saved: {error}"))?;
+    dowse::set_ocr_resource_dir(path.clone()).map_err(|error| error.to_string())?;
+    logging::log_line(
+        "ocr",
+        &format!("Using user-selected Tesseract folder: {}", path.display()),
+    );
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// 索引规则面板的读取入口：取当前索引目录旁 rules.json 里的规则（没配过就
@@ -697,6 +695,7 @@ pub struct SettingsDto {
     pub hotkey: String,
     pub autostart_enabled: bool,
     pub lang: String,
+    pub ocr_dir: Option<String>,
 }
 
 /// 设置面板打开时拉一次通用区的全部初值（改键/自启/语言）。
@@ -708,6 +707,7 @@ pub fn get_config(app: tauri::AppHandle) -> SettingsDto {
         hotkey: cfg.hotkey,
         autostart_enabled,
         lang: cfg.lang,
+        ocr_dir: cfg.ocr_dir.map(|path| path.to_string_lossy().into_owned()),
     }
 }
 

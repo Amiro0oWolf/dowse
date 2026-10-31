@@ -107,6 +107,7 @@ pub use meta::registered_roots;
 pub use ocr::availability_error as ocr_availability_error;
 pub use ocr::is_available;
 pub use ocr::set_resource_dir as set_ocr_resource_dir;
+pub use ocr::validate_resource_dir as validate_ocr_resource_dir;
 pub use ocr_queue::OcrQueue;
 pub use ocr_worker::{DEFAULT_WORKERS, OcrDrainStats, OcrPipeline, drain_ocr_queue};
 pub use reconcile::{ReconcileStats, reconcile, reconcile_orphans};

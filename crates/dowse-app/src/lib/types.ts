@@ -95,4 +95,5 @@ export interface AppSettings {
 	hotkey: string;
 	autostart_enabled: boolean;
 	lang: LangOption;
+	ocr_dir: string | null;
 }

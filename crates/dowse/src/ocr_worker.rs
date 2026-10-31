@@ -96,8 +96,7 @@ impl OcrPipeline {
     }
 }
 
-/// 单个 worker 的主循环：独占创建一个 OcrEngine（绝不跨线程共享），不断从队列取
-/// 图片、识别、清洗，识别结果先攒进本地批次，凑够 `OCR_BATCH_MAX` 张或者攒了
+/// 单个 worker 的主循环：不断从队列取图片、识别、清洗，识别结果先攒进本地批次，凑够 `OCR_BATCH_MAX` 张或者攒了
 /// `OCR_BATCH_WINDOW` 才一次性写回索引（见批量提交的文档）。队列暂时空了就把
 /// 手头的半批先落盘——不能让已经识别完的结果因为"凑不够一批"就在内存里等到
 /// 下一张图片入队，那样队列长期偏空时最后几张图会迟迟搜不到。
@@ -107,17 +106,6 @@ fn worker_loop(
     stop: Arc<AtomicBool>,
     on_progress: Arc<dyn Fn(usize) + Send + Sync>,
 ) {
-    let engine = match ocr::create_engine() {
-        Ok(engine) => engine,
-        Err(err) => {
-            // OcrPipeline::start 已经用 is_available() 探测过一次，这里理论上不该失败；
-            // 真发生了（比如探测和创建之间语言包被卸载）就让这个 worker 直接退出，
-            // 其余 worker 不受影响，不 panic 整个进程。
-            eprintln!("OCR worker 创建引擎失败，该 worker 退出: {err}");
-            return;
-        }
-    };
-
     let mut batch: Vec<(PathBuf, i64, u64, String)> = Vec::with_capacity(OCR_BATCH_MAX);
     let mut batch_started: Option<Instant> = None;
 
@@ -127,7 +115,7 @@ fn worker_loop(
                 // 识别过程本身不持有 updater 的锁——这是"低优先级、不阻塞搜索"的
                 // 关键：慢的是这一步（百毫秒级），写回索引只是攒批之后偶尔一次的
                 // delete+add+commit。
-                let content = match ocr::recognize(&engine, &path) {
+                let content = match ocr::recognize(&path) {
                     Ok(raw) => ocr::dual_form_content(&raw),
                     Err(err) => {
                         eprintln!(

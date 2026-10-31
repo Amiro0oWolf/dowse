@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 /// 落盘在 `%LOCALAPPDATA%\dowse\data\config.json`，独立于索引目录。
-/// 设计文档明确本里程碑不做设置界面——所有配置走托盘菜单和这个文件。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// 上一次成功建索引的目标目录，托盘"重建索引"复用这个。
@@ -28,6 +27,9 @@ pub struct AppConfig {
     /// 响应式，本轮不做），所以这里只负责持久化选择。
     #[serde(default = "default_lang")]
     pub lang: String,
+    /// Optional user-selected Tesseract installation used instead of the bundled one.
+    #[serde(default)]
+    pub ocr_dir: Option<PathBuf>,
 }
 
 fn default_hotkey() -> String {
@@ -45,6 +47,7 @@ impl Default for AppConfig {
             autostart_user_disabled: false,
             hotkey: default_hotkey(),
             lang: default_lang(),
+            ocr_dir: None,
         }
     }
 }
@@ -121,6 +124,12 @@ impl ConfigState {
         guard.lang = lang;
         save(&guard)
     }
+
+    pub fn set_ocr_dir(&self, directory: PathBuf) -> Result<()> {
+        let mut guard = self.0.lock().expect("config mutex poisoned");
+        guard.ocr_dir = Some(directory);
+        save(&guard)
+    }
 }
 
 #[cfg(test)]
@@ -132,11 +141,23 @@ mod tests {
         assert_eq!(cfg.target_dir, Some(PathBuf::from("docs")));
         assert_eq!(cfg.hotkey, "Ctrl+Space");
         assert_eq!(cfg.lang, "en");
+        assert_eq!(cfg.ocr_dir, None);
         assert!(cfg.autostart_user_disabled);
         assert!(
             !serde_json::to_string(&cfg)
                 .unwrap()
                 .contains("transparency")
         );
+    }
+
+    #[test]
+    fn selected_ocr_directory_round_trips_through_config() {
+        let config = AppConfig {
+            ocr_dir: Some(PathBuf::from(r"C:\Tesseract-OCR")),
+            ..AppConfig::default()
+        };
+        let serialized = serde_json::to_string(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored.ocr_dir, config.ocr_dir);
     }
 }
